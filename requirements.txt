@@ -1,2 +1,5 @@
-python-telegram-bot==20.3
+python-telegram-bot==20.6
+gspread==5.12.4
+python-dotenv==1.0.0     
+oauth2client==4.1.3
 
