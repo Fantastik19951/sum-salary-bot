@@ -1,0 +1,1 @@
+python-telegram-bot==20.6\ngspread==5.12.4\npython-dotenv==1.0.0\noauth2client==4.1.3\n
