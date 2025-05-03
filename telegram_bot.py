@@ -1,6 +1,12 @@
 import os, logging, datetime as dt, re
 from collections import deque, defaultdict
 from dotenv import load_dotenv
+# --- читать credentials.json из переменной, если файл не найден -------------
+if not os.path.exists("credentials.json"):
+    creds_env = os.getenv("GOOGLE_KEY_JSON")
+    if creds_env:
+        with open("credentials.json", "w") as f:
+            f.write(creds_env)
 from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup,
     ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
