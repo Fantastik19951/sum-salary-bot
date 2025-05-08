@@ -389,6 +389,24 @@ async def cmd_start(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.application.bot_data.setdefault("chats", set()).add(u.effective_chat.id)
     await u.message.reply_text("📊 Главное меню", reply_markup=main_kb())
 
+# ─── SEARCH COMMAND ---------------------------------------------------------
+async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = " ".join(context.args).strip()
+    if not query:
+        return await update.message.reply_text("Использование: /search <слово или сумма>")
+    ent = [e for v in context.bot_data["entries"].values() for e in v]
+    if query.replace(",", ".").isdigit():
+        val = float(query.replace(",", "."))
+        res = [e for e in ent if e.get("amount") == val or e.get("salary") == val]
+    else:
+        q = query.lower()
+        res = [e for e in ent if q in e["symbols"].lower()]
+    if not res:
+        return await update.message.reply_text("Ничего не найдено")
+    res.sort(key=lambda e: pdate(e["date"]))
+    body = "\n".join(f"{e['date']} · {e['symbols']} · {e.get('salary', e.get('amount'))}" for e in res)
+    await update.message.reply_text(body)
+
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
     app.bot_data["entries"] = read_sheet()
