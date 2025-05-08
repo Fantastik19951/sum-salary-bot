@@ -145,47 +145,46 @@ def crumbs_day(code,date):
     y,m=code.split('-')
     return f"{y} · {MONTH_FULL[int(m)-1]} · {date}"
 
-# ─── MONTH VIEW -------------------------------------------------------------
-def month_kb(code,flag,days):
-    togg='old' if flag=='new' else 'new'
-    rows=[[InlineKeyboardButton("📂 "+("Первая" if flag=='new' else "Вторая"),
-                                callback_data=f"tgl_{code}_{togg}")]]
-    for d in days:
-        rows.append([InlineKeyboardButton(d, callback_data=f"day_{code}_{d}")])
-    rows.append([InlineKeyboardButton("📊 Статистика", callback_data=f"stat_{code}_{flag}")])
-    rows.append([InlineKeyboardButton("➕ Запись (месяц)", callback_data=f"addmon_{code}")])
-    rows.extend(nav_kb().inline_keyboard)
-    return InlineKeyboardMarkup(rows)
-async def show_month(m,ctx,code,flag=None):
-    flag  = flag or default_half(code)
-    part  = half(sorted(ctx.bot_data["entries"].get(code, []),
-                        key=lambda e:pdate(e['date'])),
-                 flag=='old')
-    days  = sorted({e['date'] for e in part}, key=pdate)
-    total = sum(e.get('salary',e.get('amount',0)) for e in part)
-    body  = "\n".join(f"{e['date']} · {e['symbols']} · {e.get('salary',e.get('amount'))}" for e in part)
 
-    await safe_edit(m,
-        f"<b>{crumbs_month(code,flag)}</b>\n{body}\n\n<b>Итого:</b> {total}",
-        month_kb(code,flag,days))
+# ─── MONTH VIEW -------------------------------------------------------------
+async def show_month(m, ctx, code, flag=None):
+    flag = flag or default_half(code)
+    # достаём, сортируем и сразу фильтруем только записи с 'amount'
+    part = half(
+        sorted(ctx.bot_data["entries"].get(code, []),
+               key=lambda e: pdate(e['date'])),
+        first_half=(flag == 'old')
+    )
+    part = [e for e in part if 'amount' in e]  # <-- ОТСЕИВАЕМ salary
+
+    days  = sorted({e['date'] for e in part}, key=pdate)
+    total = sum(e['amount'] for e in part)
+    body  = "\n".join(f"{e['date']} · {e['symbols']} · {e['amount']}" for e in part)
+
+    await safe_edit(
+        m,
+        f"<b>{crumbs_month(code, flag)}</b>\n\n{body}\n\n<b>Итого:</b> {total}",
+        month_kb(code, flag, days)
+    )
 
 # ─── DAY VIEW ---------------------------------------------------------------
-def day_kb(code,date,lst):
-    rows=[[InlineKeyboardButton(f"❌ {e['symbols']}",
-                                callback_data=f"drow_{e['row_idx']}_{code}_{date}")]
-          for e in lst]
-    rows.append([InlineKeyboardButton("➕ Запись (день)",callback_data=f"addday_{code}_{date}")])
-    rows.extend(nav_kb().inline_keyboard)
-    return InlineKeyboardMarkup(rows)
-async def show_day(m,ctx,code,date):
-    lst=[e for e in ctx.bot_data["entries"].get(code,[]) if e['date']==date]
-    total=sum(e.get('salary',e.get('amount',0)) for e in lst)
-    body="\n".join(f"{e['symbols']} · {e.get('salary',e.get('amount'))}"
-                   for e in lst) if lst else "Записей нет"
+async def show_day(m, ctx, code, date):
+    # берём только записи за date, у которых есть ключ 'amount'
+    lst = [
+        e for e in ctx.bot_data["entries"].get(code, [])
+        if e['date'] == date and 'amount' in e
+    ]
+    total = sum(e['amount'] for e in lst)
+    if lst:
+        body = "\n".join(f"{e['symbols']} · {e['amount']}" for e in lst)
+    else:
+        body = "Записей нет"
 
-    await safe_edit(m,
-        f"<b>{crumbs_day(code,date)}</b>\n{body}\n\n<b>Итого:</b> {total}",
-        day_kb(code,date,lst))
+    await safe_edit(
+        m,
+        f"<b>{crumbs_day(code, date)}</b>\n\n{body}\n\n<b>Итого:</b> {total}",
+        day_kb(code, date, lst)
+    )
 
 # ─── STATISTICS -------------------------------------------------------------
 async def show_stat(m,ctx,code,flag):
