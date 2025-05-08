@@ -406,6 +406,14 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res.sort(key=lambda e: pdate(e["date"]))
     body = "\n".join(f"{e['date']} · {e['symbols']} · {e.get('salary', e.get('amount'))}" for e in res)
     await update.message.reply_text(body)
+    
+    # ─── REMINDER ---------------------------------------------------------------
+async def reminder(context: ContextTypes.DEFAULT_TYPE):
+    for cid in context.application.bot_data.get("chats", set()):
+        try:
+            await context.bot.send_message(cid, "⏰ Не забудьте внести записи за сегодня!")
+        except Exception as e:
+            logging.warning(f"reminder error: {e}")
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
