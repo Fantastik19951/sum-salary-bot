@@ -152,15 +152,10 @@ def nav_kb():
 # ─── SAFE EDIT --------------------------------------------------------------
 async def safe_edit(msg, text, kb=None):
     kb = kb or nav_kb()
-    hd = ""
-    # если есть хлебные крошки
-    if msg._effective_user_data := msg._effective_user_data if hasattr(msg, "_effective_user_data") else None:
-        pass
     try:
         return await msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
     except:
         return await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
-
 # ─── MAIN MENU --------------------------------------------------------------
 def main_kb():
     kb = InlineKeyboardMarkup([
