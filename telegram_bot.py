@@ -146,25 +146,33 @@ def crumbs_day(code,date):
     return f"{y} · {MONTH_FULL[int(m)-1]} · {date}"
 
 
-# ─── MONTH VIEW -------------------------------------------------------------
-async def show_month(m, ctx, code, flag=None):
-    flag = flag or default_half(code)
-    # достаём, сортируем и сразу фильтруем только записи с 'amount'
-    part = half(
-        sorted(ctx.bot_data["entries"].get(code, []),
-               key=lambda e: pdate(e['date'])),
-        first_half=(flag == 'old')
-    )
-    part = [e for e in part if 'amount' in e]  # <-- ОТСЕИВАЕМ salary
 
-    days  = sorted({e['date'] for e in part}, key=pdate)
-    total = sum(e['amount'] for e in part)
-    body  = "\n".join(f"{e['date']} · {e['symbols']} · {e['amount']}" for e in part)
+# ─── MONTH VIEW (показывает только amount, без salary) ----------------------
+async def show_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    # код месяца: YYYY-MM
+    code = query.data.split('_', 1)[1]
 
-    await safe_edit(
-        m,
-        f"<b>{crumbs_month(code, flag)}</b>\n\n{body}\n\n<b>Итого:</b> {total}",
-        month_kb(code, flag, days)
+    # все записи за этот месяц
+    month_entries = context.user_data.get("entries", {}).get(code, [])
+
+    # фильтрация: только записи с 'amount' (колонка C), без 'salary'
+    month_entries = [e for e in month_entries if 'amount' in e]
+
+    if not month_entries:
+        return await query.message.edit_text(
+            f"📅 {code}\n\nЗаписей за этот месяц нет.", reply_markup=main_kb()
+        )
+
+    # строим текст и сумму
+    lines = [f"{e['date']} | {e['symbols']} | {e['amount']}" for e in month_entries]
+    total = sum(e['amount'] for e in month_entries)
+
+    await query.message.edit_text(
+        f"📅 {code}\n\n" + "\n".join(lines) + f"\n\n<b>Итого:</b> {total}",
+        parse_mode='HTML',
+        reply_markup=main_kb()
     )
 
 # ─── DAY VIEW ---------------------------------------------------------------
@@ -434,6 +442,7 @@ if __name__=="__main__":
     app.add_handler(CommandHandler("search",cmd_search))
     app.add_handler(CallbackQueryHandler(cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,process_text))
+    app.add_handler(CallbackQueryHandler(show_month, pattern=r"^month_[0-9]{4}-[0-9]{2}$"))
 
     hh,mm=REMIND_HH_MM
     app.job_queue.run_repeating(auto_sync,5,0)
