@@ -31,8 +31,8 @@ TOKEN        = os.getenv("TELEGRAM_BOT_TOKEN")
 DATE_FMT     = "%d.%m.%Y"
 DATE_RX      = re.compile(r"\d{2}\.\d{2}\.\d{4}$")
 HEADER_ROWS  = 4
-UNDO_WINDOW  = 10     # секунд для удаления уведомлений
-REMIND_HH_MM = (20, 0) # время ежедневного напоминания
+UNDO_WINDOW  = 10     # seconds for auto-deletion of notifications
+REMIND_HH_MM = (20, 0) # daily reminder at 20:00
 MONTH_FULL   = [
     'Январь','Февраль','Март','Апрель','Май','Июнь',
     'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'
@@ -63,7 +63,7 @@ def sdate(d): return d.strftime(DATE_FMT)
 def pdate(s): return dt.datetime.strptime(s, DATE_FMT).date()
 def is_date(s): return bool(DATE_RX.fullmatch(s.strip()))
 def safe_float(v):
-    v = (v or "").strip().replace(",", ".")
+    v = (v or "").strip().replace(",",".")
     if v in ("","-","—"): return None
     try: return float(v)
     except: return None
@@ -78,11 +78,11 @@ def read_sheet():
         d = row[0].strip()
         if not is_date(d): continue
         e = {"date": d, "symbols": row[1].strip(), "row_idx": idx}
-        amt = safe_float(row[2]) if len(row) > 2 else None
-        sal = safe_float(row[3]) if len(row) > 3 else None
+        amt = safe_float(row[2]) if len(row)>2 else None
+        sal = safe_float(row[3]) if len(row)>3 else None
         if amt is None and sal is None: continue
         if sal is not None: e["salary"] = sal
-        else:              e["amount"] = amt
+        else:             e["amount"] = amt
         key = f"{pdate(d).year}-{pdate(d).month:02d}"
         data[key].append(e)
     return data
@@ -100,9 +100,9 @@ def push_row(entry) -> int | None:
     nd = pdate(entry["date"])
     row = [
         entry["date"],
-        entry.get("symbols", ""),
-        entry.get("amount", ""),
-        entry.get("salary", ""),
+        entry.get("symbols",""),
+        entry.get("amount",""),
+        entry.get("salary",""),
     ]
     col = SHEET.col_values(1)[HEADER_ROWS:]
     ins = HEADER_ROWS
@@ -131,10 +131,7 @@ async def safe_edit(msg, text, kb=None):
 # ─── BOUNDS for PROFIT ------------------------------------------------------
 def bounds_today():
     d = dt.date.today()
-    if d.day <= 15:
-        start = d.replace(day=1)
-    else:
-        start = d.replace(day=16)
+    start = d.replace(day=1) if d.day<=15 else d.replace(day=16)
     return start, d
 
 def bounds_prev():
@@ -160,8 +157,8 @@ def main_kb():
          InlineKeyboardButton("💼 Прошлая ЗП", callback_data="profit_prev")],
         [InlineKeyboardButton("📊 KPI текущего", callback_data="kpi"),
          InlineKeyboardButton("📊 KPI предыдущего", callback_data="kpi_prev")],
-        [InlineKeyboardButton("📜 История ЗП", callback_data="hist")],
-        [InlineKeyboardButton("🗄 Экспорт CSV", callback_data="export_menu")],
+        [InlineKeyboardButton("📜 История ЗП", callback_data="hist"),
+         InlineKeyboardButton("🗄 Экспорт CSV", callback_data="export_menu")],
     ])
 
 async def show_main(msg, ctx: ContextTypes.DEFAULT_TYPE):
@@ -169,11 +166,11 @@ async def show_main(msg, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ─── YEAR MENU --------------------------------------------------------------
 def year_kb(year: str):
-    btns = [
+    buttons = [
         InlineKeyboardButton(f"📅 {MONTH_FULL[i]}", callback_data=f"mon_{year}-{i+1:02d}")
         for i in range(12)
     ]
-    rows = [btns[i:i+4] for i in range(0,12,4)]
+    rows = [buttons[i:i+4] for i in range(0,12,4)]
     rows.append([InlineKeyboardButton("◀️ Назад", callback_data="back")])
     return InlineKeyboardMarkup(rows)
 
@@ -184,7 +181,7 @@ async def show_year(msg, ctx: ContextTypes.DEFAULT_TYPE, year: str):
 def month_kb(code, flag, days):
     togg = "old" if flag=="new" else "new"
     rows = [[InlineKeyboardButton("Первая" if flag=="new" else "Вторая",
-              callback_data=f"tgl_{code}_{togg}")]]
+                                  callback_data=f"tgl_{code}_{togg}")]]
     for d in days:
         rows.append([InlineKeyboardButton(d, callback_data=f"day_{code}_{d}")])
     rows.append([InlineKeyboardButton("◀️ Назад", callback_data="back")])
@@ -204,14 +201,15 @@ async def show_month(msg, ctx: ContextTypes.DEFAULT_TYPE, code: str, flag=None):
     )
 
 def day_kb(code, date, lst):
-    rows = [[InlineKeyboardButton("❌", callback_data=f"drow_{e['row_idx']}_{code}_{date}")]
-            for e in lst]
+    rows = [[InlineKeyboardButton("❌", callback_data=f"drow_{e['row_idx']}_{code}_{date}")] for e in lst]
     rows.append([InlineKeyboardButton("◀️ Назад", callback_data="back")])
     return InlineKeyboardMarkup(rows)
 
 async def show_day(msg, ctx: ContextTypes.DEFAULT_TYPE, code: str, date: str):
-    lst = [e for e in ctx.application.bot_data["entries"].get(code, [])
-           if e["date"]==date and "amount" in e]
+    lst = [
+        e for e in ctx.application.bot_data["entries"].get(code, [])
+        if e["date"]==date and "amount" in e
+    ]
     total = sum(e["amount"] for e in lst)
     body = "\n".join(f"{e['symbols']} · {e['amount']}" for e in lst) or "Нет записей"
     await safe_edit(msg,
@@ -221,8 +219,10 @@ async def show_day(msg, ctx: ContextTypes.DEFAULT_TYPE, code: str, date: str):
 
 # ─── STATISTICS, KPI, HISTORY, PROFIT --------------------------------------
 async def show_stat(msg, ctx: ContextTypes.DEFAULT_TYPE, code: str, flag: str):
-    ent = [e for e in ctx.application.bot_data["entries"].get(code, [])
-           if (pdate(e["date"]).day<=15)==(flag=="old")]
+    ent = [
+        e for e in ctx.application.bot_data["entries"].get(code, [])
+        if (pdate(e["date"]).day<=15)==(flag=="old")
+    ]
     if not ent:
         return await safe_edit(msg, "Нет данных", nav_kb())
     turn = sum(e.get("amount",0) for e in ent)
@@ -230,18 +230,18 @@ async def show_stat(msg, ctx: ContextTypes.DEFAULT_TYPE, code: str, flag: str):
     days = len({e["date"] for e in ent})
     avg  = round(sal/days,2) if days else 0
     await safe_edit(msg,
-        f"📊 Статистика {code}\n• Оборот: {turn}\n• ЗП 10%: {sal}\n• Дней: {days}\n• Ср/день: {avg}"
+        f"📊 Статистика {code}\n• Оборот: {turn}\n• ЗП 10%: {sal}\n• Дней: {days}\n• Среднее: {avg}"
     )
 
 async def show_kpi(msg, ctx: ContextTypes.DEFAULT_TYPE, prev=False):
     if prev:
-        start,end = bounds_prev()
-        title="📊 KPI предыдущего"
+        start,end = bounds_prev(); title="📊 KPI предыдущего"
     else:
-        start,end = bounds_today()
-        title="📊 KPI текущего"
-    ent = [e for v in ctx.application.bot_data["entries"].values() for e in v
-           if start<=pdate(e["date"])<=end and "amount" in e]
+        start,end = bounds_today(); title="📊 KPI текущего"
+    ent = [
+        e for v in ctx.application.bot_data["entries"].values() for e in v
+        if start<=pdate(e["date"])<=end and "amount" in e
+    ]
     if not ent:
         return await safe_edit(msg, "Нет данных за период", nav_kb())
     turn = sum(e["amount"] for e in ent)
@@ -250,11 +250,14 @@ async def show_kpi(msg, ctx: ContextTypes.DEFAULT_TYPE, prev=False):
     plen = (end - start).days + 1
     avg  = round(sal/days,2) if days else 0
     await safe_edit(msg,
-        f"{title}\n• Оборот: {turn}\n• ЗП 10%: {sal}\n• Дней: {days}/{plen}\n• Ср/день: {avg}"
+        f"{title}\n• Оборот: {turn}\n• ЗП 10%: {sal}\n• Дней: {days}/{plen}\n• Среднее: {avg}"
     )
 
 async def show_history(msg, ctx: ContextTypes.DEFAULT_TYPE):
-    ent = [e for v in ctx.application.bot_data["entries"].values() for e in v if "salary" in e]
+    ent = [
+        e for v in ctx.application.bot_data["entries"].values() for e in v
+        if "salary" in e
+    ]
     if not ent:
         return await safe_edit(msg, "История пуста", nav_kb())
     ent.sort(key=lambda e: pdate(e["date"]))
@@ -264,9 +267,11 @@ async def show_history(msg, ctx: ContextTypes.DEFAULT_TYPE):
         f"📜 История ЗП\n{body}\n\n<b>Всего:</b> {total}"
     )
 
-async def show_profit(msg, ctx: ContextTypes.DEFAULT_TYPE, start, end, title):
-    ent = [e for v in ctx.application.bot_data["entries"].values() for e in v
-           if start<=pdate(e["date"])<=end and "amount" in e]
+async def show_profit(msg, ctx: ContextTypes.DEFAULT_TYPE, start, end, title: str):
+    ent = [
+        e for v in ctx.application.bot_data["entries"].values() for e in v
+        if start<=pdate(e["date"])<=end and "amount" in e
+    ]
     tot = sum(e["amount"] for e in ent)
     await safe_edit(msg,
         f"{title}\n• 10%: {round(tot*0.10,2)}"
@@ -298,15 +303,16 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if m:
         d1,d2 = map(pdate, m.groups())
         res = [e for e in ent if d1<=pdate(e["date"])<=d2]
-    m = re.match(r"^([<>])\s*(\d+)$", q)
-    if m:
-        op,val = m.group(1), float(m.group(2))
-        if op==">":
-            res = [e for e in ent if (e.get("amount") or e.get("salary") or 0)>val]
+    else:
+        m2 = re.match(r"^([<>])\s*(\d+)$", q)
+        if m2:
+            op,val = m2.group(1), float(m2.group(2))
+            if op==">":
+                res = [e for e in ent if (e.get("amount") or e.get("salary") or 0)>val]
+            else:
+                res = [e for e in ent if (e.get("amount") or e.get("salary") or 0)<val]
         else:
-            res = [e for e in ent if (e.get("amount") or e.get("salary") or 0)<val]
-    if not res and not m and not re.match(r"\d{2}\.\d{2}\.\d{4}-\d{2}\.\d{2}\.\d{4}", q):
-        res = [e for e in ent if q.lower() in e["symbols"].lower()]
+            res = [e for e in ent if q.lower() in e["symbols"].lower()]
     if not res:
         return await update.message.reply_text("Ничего не найдено")
     res.sort(key=lambda e: pdate(e["date"]))
@@ -314,12 +320,17 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(body)
 
 # ─── ADD FLOW ---------------------------------------------------------------
-async def ask_rec(m, ctx: ContextTypes.DEFAULT_TYPE):
-    await safe_edit(m, "📅 Укажите дату (ДД.MM.ГГГГ) или нажмите «Сегодня»:", 
-                    InlineKeyboardMarkup([[InlineKeyboardButton("Сегодня", callback_data="go_today")]]))
+async def ask_rec(msg, ctx: ContextTypes.DEFAULT_TYPE, target=None):
+    if target:
+        ctx.user_data["add"] = {"step":"sym","date":target}
+        return await msg.reply_text(f"✏️ Сегодня ({target}) — введите имя:")
+    ctx.user_data["add"] = {"step":"date"}
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("Сегодня", callback_data="go_today")]])
+    await safe_edit(msg, "📅 Укажите дату или нажмите «Сегодня»:", kb)
 
-async def ask_sal(m, ctx: ContextTypes.DEFAULT_TYPE):
-    await m.reply_text("💵 Введите сумму:")
+async def ask_sal(msg, ctx: ContextTypes.DEFAULT_TYPE):
+    ctx.user_data["add"] = {"step":"val","mode":"salary","date":sdate(dt.date.today())}
+    await msg.reply_text("💵 Введите сумму:")
 
 async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ad = ctx.user_data.get("add")
@@ -329,21 +340,30 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try: await u.message.delete()
     except: pass
 
-    if ad["step"]=="date":
+    if ad["step"] == "date":
         if txt and not is_date(txt):
             return await u.message.reply_text("Формат ДД.MM.ГГГГ")
-        ad["date"] = txt or sdate(dt.date.today()); ad["step"]="sym"
+        ad["date"] = txt or sdate(dt.date.today())
+        ad["step"] = "sym"
         return await u.message.reply_text(f"✏️ Введите имя для {ad['date']}:")
-    if ad["step"]=="sym":
-        ad["symbols"] = txt; ad["step"]="val"
+    if ad["step"] == "sym":
+        ad["symbols"] = txt
+        ad["step"] = "val"
         return await u.message.reply_text(f"💰 Введите сумму для {ad['symbols']}:")
-    if ad["step"]=="val":
-        try: val=float(txt.replace(",",".")) 
-        except: return await u.message.reply_text("Нужно число")
-        ad["amount"] = val
-        row = push_row(ad); ctx.application.bot_data["entries"]=read_sheet()
-        ctx.user_data.pop("add",None)
-        resp = await u.message.reply_html(f"✅ Запись добавлена:\n<b>{ad['symbols']}</b> — <b>{val}</b>")
+    if ad["step"] == "val":
+        try: val = float(txt.replace(",",".")) 
+        except:
+            return await u.message.reply_text("Нужно число")
+        if ad.get("mode")=="salary":
+            ad["salary"] = val
+        else:
+            ad["amount"] = val
+        row = push_row(ad)
+        ctx.application.bot_data["entries"] = read_sheet()
+        ctx.user_data.pop("add", None)
+        resp = await u.message.reply_html(
+            f"✅ Запись добавлена:\n<b>{ad['symbols']}</b> — <b>{val}</b>"
+        )
         ctx.application.job_queue.run_once(
             lambda c: c.bot.delete_message(resp.chat.id, resp.message_id),
             when=UNDO_WINDOW
@@ -353,12 +373,12 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = upd.callback_query
     if not q: return
-    d,m = q.data, q.message
+    d, m = q.data, q.message
     await q.answer()
 
-    if d=="main":
+    if d == "main":
         return await show_main(m, ctx)
-    if d=="back":
+    if d == "back":
         return await show_main(m, ctx)
 
     if d.startswith("year_"):
@@ -373,38 +393,43 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("day_"):
         _,code,dd = d.split("_",2)
         return await show_day(m, ctx, code, dd)
-    if d=="go_today":
+
+    if d == "go_today":
         today = sdate(dt.date.today())
-        ctx.user_data["add"] = {"step":"date"}
-        return await ask_rec(m, ctx)
+        return await ask_rec(m, ctx, target=today)
+
     if d.startswith("drow_"):
         _,row,code,day = d.split("_",3)
-        delete_row(int(row)); ctx.application.bot_data["entries"]=read_sheet()
+        delete_row(int(row))
+        ctx.application.bot_data["entries"] = read_sheet()
         resp = await m.reply_text("🚫 Запись удалена")
         ctx.application.job_queue.run_once(
             lambda c: c.bot.delete_message(resp.chat.id, resp.message_id),
             when=UNDO_WINDOW
         )
         return await show_day(m, ctx, code, day)
-    if d=="profit_now":
+
+    if d == "profit_now":
         s,e = bounds_today()
         return await show_profit(m, ctx, s, e, "💰 Текущая ЗП")
-    if d=="profit_prev":
+    if d == "profit_prev":
         s,e = bounds_prev()
         return await show_profit(m, ctx, s, e, "💼 Прошлая ЗП")
-    if d=="kpi":
+
+    if d == "kpi":
         return await show_kpi(m, ctx, False)
-    if d=="kpi_prev":
+    if d == "kpi_prev":
         return await show_kpi(m, ctx, True)
-    if d=="hist":
+
+    if d == "hist":
         return await show_history(m, ctx)
-    if d=="export_menu":
-        return await m.reply_text("Используйте /export YYYY-MM")
-    if d=="add_rec":
-        ctx.user_data["add"] = {"step":"date"}
+
+    if d == "export_menu":
+        return await m.reply_text("Используйте /export YYYY-MM для выгрузки CSV")
+
+    if d == "add_rec":
         return await ask_rec(m, ctx)
-    if d=="add_sal":
-        ctx.user_data["add"] = {"step":"val"}
+    if d == "add_sal":
         return await ask_sal(m, ctx)
 
 # ─── REMINDER ---------------------------------------------------------------
@@ -420,9 +445,8 @@ async def cmd_start(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.application.bot_data.setdefault("chats", set()).add(u.effective_chat.id)
     await show_main(u.message, ctx)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
-    app.application.bot_data = {}
     app.bot_data["entries"] = read_sheet()
 
     app.add_handler(CommandHandler("start", cmd_start))
@@ -432,7 +456,7 @@ if __name__=="__main__":
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_text))
 
     app.job_queue.run_repeating(auto_sync, interval=5, first=0)
-    hh,mm = REMIND_HH_MM
+    hh, mm = REMIND_HH_MM
     app.job_queue.run_daily(reminder, time=dt.time(hour=hh, minute=mm))
 
     logging.info("🚀 Bot up")
