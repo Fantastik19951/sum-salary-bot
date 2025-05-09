@@ -176,7 +176,7 @@ async def show_main(msg,ctx,push=True):
 async def show_year(msg, ctx, year, push=True):
     if push:
         push_nav(ctx, f"year_{year}", year)
-    pad = "\u00A0" * 8
+    pad = "\u00A0" * 12   # пробелы слева/справа — подбирайте длину
     btns = [
         InlineKeyboardButton(
             f"{pad}{MONTH_NAMES[i].capitalize()}{pad}",
@@ -190,26 +190,23 @@ async def show_year(msg, ctx, year, push=True):
 
 
 async def show_month(msg, ctx, code, flag=None, push=True):
+    year, mon = code.split("-")
+    label = f"{MONTH_NAMES[int(mon)-1].capitalize()} {year}"
     if push:
-        year, mon = code.split("-")
-        label = f"{MONTH_NAMES[int(mon)-1].capitalize()} {year}"
         push_nav(ctx, f"mon_{code}", label)
-    pad = "\u00A0" * 8
-    # определяем половину и записи, как раньше
+    pad = "\u00A0" * 12
     today = dt.date.today()
     if flag is None:
         flag = "old" if today.strftime("%Y-%m")==code and today.day<=15 else "new"
 
     ents = ctx.application.bot_data["entries"].get(code, [])
     part = [e for e in ents
-            if "amount" in e and ((pdate(e["date"]).day <=15) == (flag=="old"))]
+            if "amount" in e and ((pdate(e["date"]).day<=15)==(flag=="old"))]
     days = sorted({e["date"] for e in part}, key=pdate)
     total = sum(e["amount"] for e in part)
 
     header = f"<b>{label} · {'01–15' if flag=='old' else '16–31'}</b>"
-    body   = "\n".join(
-        f"{pad}{d}{pad}" for d in days
-    ) or "Нет записей"
+    body   = "\n".join(f"{pad}{d}{pad}" for d in days) or "Нет записей"
     footer = f"<b>Итого: {fmt_amount(total)} $</b>"
 
     togg = "new" if flag=="old" else "old"
@@ -227,7 +224,7 @@ async def show_month(msg, ctx, code, flag=None, push=True):
 async def show_day(msg, ctx, code, date, push=True):
     if push:
         push_nav(ctx, f"day_{code}_{date}", date)
-    pad = "\u00A0" * 8
+    pad = "\u00A0" * 12
     ctx.application.bot_data["entries"] = read_sheet()
     ents = [
         e for e in ctx.application.bot_data["entries"].get(code, [])
