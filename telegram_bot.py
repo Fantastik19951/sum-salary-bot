@@ -452,71 +452,104 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = q.data
     msg  = q.message
 
+    # 1) Сперва узкие обработчики — редактирование и зарплата
+    if data.startswith("edit_"):
+        # редактирование существующей записи
+        _, row, code, day = data.split("_", 4)[:4]
+        idx = int(row)
+        old = next(e for e in ctx.application.bot_data["entries"].get(code, [])
+                   if e["row_idx"] == idx)
+        ctx.user_data["flow"] = {
+            "step": "sym",
+            "mode": "edit",
+            "row": idx,
+            "date": day,
+            "old_symbols": old["symbols"],
+            "msg": msg
+        }
+        return await ask_name(msg, ctx)
+
+    if data == "add_sal":
+        # добавление зарплаты
+        ctx.user_data["flow"] = {
+            "step": "val",
+            "mode": "salary",
+            "date": sdate(dt.date.today()),
+            "msg": msg
+        }
+        return await ask_amount(msg, ctx)
+
+    # 2) Затем общий add_ для прочих записей
+    if data.startswith("add_"):
+        _, code, date = data.split("_", 2)
+        ctx.user_data["flow"] = {
+            "step": "sym",
+            "mode": "add",
+            "date": date,
+            "msg": msg
+        }
+        return await ask_name(msg, ctx)
+
+    # 3) undo / undo_edit
+    if data.startswith("undo_edit_"):
+        idx = int(data.split("_",1)[1])
+        ud = ctx.user_data.get("undo_edit", {})
+        if ud.get("row")==idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
+            update_row(idx, ud["old_symbols"], ud["old_amount"])
+            ctx.application.bot_data["entries"] = read_sheet()
+            return await show_main(msg, ctx)
+        return await msg.reply_text("⏱ Время вышло")
+
+    if data.startswith("undo_"):
+        idx = int(data.split("_",1)[1])
+        ud = ctx.user_data.get("undo", {})
+        if ud.get("row")==idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
+            delete_row(idx)
+            ctx.application.bot_data["entries"] = read_sheet()
+            return await show_main(msg, ctx)
+        return await msg.reply_text("⏱ Время вышло")
+
+    # 4) остальные навигационные и служебные колбеки
     if data == "main":
         return await show_main(msg, ctx)
+    if data == "back":
+        code, label = pop_view(ctx)
+        # повторный вызов, но без пуша
+        if code == "main":
+            return await show_main(msg, ctx, push=False)
+        if code.startswith("year_"):
+            return await show_year(msg, ctx, code.split("_",1)[1], push=False)
+        if code.startswith("mon_"):
+            return await show_month(msg, ctx, code.split("_",1)[1], None, push=False)
+        if code.startswith("day_"):
+            _, c, d = code.split("_",2)
+            return await show_day(msg, ctx, c, d, push=False)
+        if code == "hist":
+            return await show_history(msg, ctx, push=False)
+        # else:
+        return await show_main(msg, ctx, push=False)
+
     if data.startswith("year_"):
         return await show_year(msg, ctx, data.split("_",1)[1])
     if data.startswith("mon_"):
         return await show_month(msg, ctx, data.split("_",1)[1])
     if data.startswith("tgl_"):
-        _,code,fl = data.split("_",2)
+        _, code, fl = data.split("_",2)
         return await show_month(msg, ctx, code, fl)
     if data.startswith("day_"):
-        _,code,day = data.split("_",2)
+        _, code, day = data.split("_",2)
         return await show_day(msg, ctx, code, day)
     if data == "go_today":
         today = sdate(dt.date.today())
         return await show_day(msg, ctx, today[:7], today)
 
-    if data == "add_rec":
-        return await ask_date(msg, ctx)
-    if data.startswith("add_"):
-        _,code,date = data.split("_",2)
-        ctx.user_data["flow"] = {"step":"sym","mode":"add","date":date,"msg":msg}
-        return await ask_name(msg, ctx)
-    if data == "today_add":
-        ctx.user_data["flow"] = {"step":"date","msg":msg}
-        return await process_text(upd, ctx)
-    if data == "add_sal":
-        ctx.user_data["flow"] = {"step":"val","mode":"salary","date":sdate(dt.date.today()),"msg":msg}
-        return await ask_amount(msg, ctx)
-
     if data.startswith("drow_"):
-        _,row,code,day = data.split("_",4)[:4]
+        _, row, code, day = data.split("_",4)[:4]
         delete_row(int(row))
         ctx.application.bot_data["entries"] = read_sheet()
         return await show_day(msg, ctx, code, day)
 
-    if data.startswith("edit_"):
-        _,row,code,day = data.split("_",4)[:4]
-        idx = int(row)
-        old = next(e for e in ctx.application.bot_data["entries"].get(code,[]) if e["row_idx"]==idx)
-        ctx.user_data["flow"] = {
-            "step":"sym","mode":"edit","row":idx,"date":day,
-            "old_symbols":old["symbols"],"msg":msg
-        }
-        return await ask_name(msg, ctx)
-
-    if data.startswith("undo_"):
-        idx = int(data.split("_",1)[1])
-        ud  = ctx.user_data.get("undo",{})
-        if ud.get("row")==idx and dt.datetime.utcnow()<=ud.get("expires",dt.datetime.min):
-            delete_row(idx)
-            ctx.application.bot_data["entries"] = read_sheet()
-            return await show_main(msg, ctx)
-        else:
-            return await msg.reply_text("⏱ Время вышло")
-
-    if data.startswith("undo_edit_"):
-        idx = int(data.split("_",1)[1])
-        ud  = ctx.user_data.get("undo_edit",{})
-        if ud.get("row")==idx and dt.datetime.utcnow()<=ud.get("expires",dt.datetime.min):
-            update_row(idx, ud["old_symbols"], ud["old_amount"])
-            ctx.application.bot_data["entries"] = read_sheet()
-            return await show_main(msg, ctx)
-        else:
-            return await msg.reply_text("⏱ Время вышло")
-
+    # PROFIT / HISTORY / KPI
     if data == "profit_now":
         s,e = bounds_today()
         return await show_profit(msg, ctx, s, e, "💰 Текущая ЗП")
@@ -529,7 +562,6 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return await show_kpi(msg, ctx, False)
     if data == "kpi_prev":
         return await show_kpi(msg, ctx, True)
-
 # ─── START & RUN ────────────────────────────────────────────────────────────
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.application.bot_data = {
