@@ -234,16 +234,18 @@ async def show_day(msg: Message, ctx, code: str, date: str, push=True):
     hdr=f"<b>{date}</b>"
     body="\n".join(f"{i+1}. {e['symbols']} · {fmt_amount(e['amount'])} $" for i,e in enumerate(ents)) or "Нет записей"
     ftr=f"<b>Итого: {fmt_amount(total)} $</b>"
-    rows=[]
-    for i,e in enumerate(ents):
+    async def show_day(msg, ctx, code, date, push=True):
+    # ...
+    pad = "\u00A0" * 8
+    rows = []
+    for i, e in enumerate(ents, start=1):
         rows.append([
-            InlineKeyboardButton(f"❌{i+1}",callback_data=f"drow_{e['row_idx']}_{code}_{date}"),
-            InlineKeyboardButton(f"✏️{i+1}",callback_data=f"edit_{e['row_idx']}_{code}_{date}")
+            InlineKeyboardButton(f"{pad}❌{i}{pad}", callback_data=f"drow_{e['row_idx']}_{code}_{date}"),
+            InlineKeyboardButton(f"{pad}✏️{i}{pad}", callback_data=f"edit_{e['row_idx']}_{code}_{date}")
         ])
-    rows.append([InlineKeyboardButton("➕ Запись",callback_data=f"add_{code}_{date}")])
+    rows.append([ InlineKeyboardButton(f"{pad}➕ Запись{pad}", callback_data=f"add_{code}_{date}") ])
     rows.extend(nav_kb(ctx).inline_keyboard)
-    await safe_edit(msg, "\n".join([hdr,body,"",ftr]), InlineKeyboardMarkup(rows))
-
+    await safe_edit(msg, "\n".join([hdr, body, "", ftr]), InlineKeyboardMarkup(rows))
 async def show_history(msg: Message, ctx, push=True):
     if push: push_nav(ctx,"hist","История ЗП")
     ents=[e for v in ctx.application.bot_data["entries"].values() for e in v if "salary" in e]
