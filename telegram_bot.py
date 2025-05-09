@@ -257,30 +257,57 @@ async def show_profit(msg, ctx, start, end, title):
     text = f"<b>{title} ({sdate(start)} – {sdate(end)})</b>\n10%: {fmt_amount(tot*0.10)} $"
     await safe_edit(msg, text, nav_main_kb())
 
-async def show_kpi(msg, ctx, prev=False):
+async def show_kpi(msg: Message, ctx: ContextTypes.DEFAULT_TYPE, prev: bool):
+    # Определяем границы периода
     if prev:
-        start,end = bounds_prev()
+        start, end = bounds_prev()
         title = "📊 KPI прошлого"
     else:
-        start,end = bounds_today()
+        start, end = bounds_today()
         title = "📊 KPI текущего"
-    ents = [e for v in ctx.application.bot_data["entries"].values() for e in v
-            if start<=pdate(e['date'])<=end and "amount" in e]
+
+    # Собираем записи по суммам за период
+    ents = [
+        e for v in ctx.application.bot_data["entries"].values()
+        for e in v
+        if start <= pdate(e['date']) <= end and "amount" in e
+    ]
     if not ents:
         return await safe_edit(msg, "<b>Нет данных</b>", nav_main_kb())
-    turn = sum(e["amount"] for e in ents)
-    sal  = turn * 0.10
-    days = len({e["date"] for e in ents})
-    plen = (end - start).days + 1
-    avg  = sal/days if days else 0
-    forecast = round(avg*plen,2) if not prev else sal
+
+    # Оборот и зарплата
+    turn   = sum(e["amount"] for e in ents)
+    salary = turn * 0.10
+
+    # Сколько дней уже заполнено (включая любые воскресенья, если в них есть записи)
+    filled_dates = { pdate(e['date']) for e in ents }
+    days_with_data = len(filled_dates)
+
+    # Средняя ЗП в день по фактическим заполненным
+    avg_per_day = salary / days_with_data if days_with_data else 0
+
+    # Вычисляем рабочие дни периода:
+    #   - все дни с weekday() 0–5 (пн–сб)
+    #   - дополнительно включаем любые воскресенья, в которых есть записи
+    total_work_days = 0
+    for offset in range((end - start).days + 1):
+        d = start + dt.timedelta(days=offset)
+        if d.weekday() < 6:
+            total_work_days += 1
+        elif d.weekday() == 6 and d in filled_dates:
+            total_work_days += 1
+
+    # Прогноз на все рабочие дни
+    forecast = round(avg_per_day * total_work_days, 2)
+
+    # Формируем вывод
     text = (
         f"<b>{title} ({sdate(start)} – {sdate(end)})</b>\n"
-        f"Оборот: {fmt_amount(turn)} $\n"
-        f"ЗП 10%: {fmt_amount(sal)} $\n"
-        f"Дней: {days}/{plen}\n"
-        f"Среднее/день: {fmt_amount(avg)} $\n"
-        f"Прогноз: {fmt_amount(forecast)} $"
+        f"• Оборот: {fmt_amount(turn)} $\n"
+        f"• ЗП 10%: {fmt_amount(salary)} $\n"
+        f"• Дней с данными: {days_with_data}/{total_work_days}\n"
+        f"• Среднее/день: {fmt_amount(avg_per_day)} $\n"
+        f"• Прогноз: {fmt_amount(forecast)} $"
     )
     await safe_edit(msg, text, nav_main_kb())
 
