@@ -173,52 +173,87 @@ async def show_main(msg,ctx,push=True):
     ctx.application.bot_data["entries"]=read_sheet()
     await safe_edit(msg,"📊 <b>Главное меню</b>",main_kb())
 
-async def show_year(msg,ctx,year,push=True):
-    if push: push_nav(ctx,f"year_{year}",year)
-    btns=[InlineKeyboardButton(MONTH_NAMES[i].capitalize(),callback_data=f"mon_{year}-{i+1:02d}") for i in range(12)]
-    rows=[btns[i:i+4] for i in range(0,12,4)]
-    rows.extend(nav_kb(ctx).inline_keyboard)
-    await safe_edit(msg,f"<b>📆 {year}</b>",InlineKeyboardMarkup(rows))
-
-async def show_month(msg,ctx,code,flag=None,push=True):
-    y,m=code.split("-");lbl=f"{MONTH_NAMES[int(m)-1].capitalize()} {y}"
-    if push: push_nav(ctx,f"mon_{code}",lbl)
-    td=dt.date.today()
-    if flag is None: flag="old" if td.strftime("%Y-%m")==code and td.day<=15 else "new"
-    ents=ctx.application.bot_data["entries"].get(code,[])
-    part=[e for e in ents if "amount" in e and ((pdate(e["date"]).day<=15)==(flag=="old"))]
-    days=sorted({e["date"] for e in part},key=pdate)
-    total=sum(e["amount"]for e in part)
-    hdr=f"<b>{lbl} · {'01–15' if flag=='old' else '16–31'}</b>"
-    body="\n".join(f"{d} · {fmt_amount(sum(x['amount']for x in part if x['date']==d))} $" for d in days) or "Нет записей"
-    ftr=f"<b>Итого: {fmt_amount(total)} $</b>"
-    tog="new" if flag=="old" else "old"
-    rows=[[InlineKeyboardButton("Первая половина" if flag=="old" else "Вторая половина",callback_data=f"tgl_{code}_{tog}")]]
-    for d in days: rows.append([InlineKeyboardButton(d,callback_data=f"day_{code}_{d}")])
-    rows.extend(nav_kb(ctx).inline_keyboard)
-    await safe_edit(msg,"\n".join([hdr,body,"",ftr]),InlineKeyboardMarkup(rows))
-
-async def show_day(msg,ctx,code,date,push=True):
-    if push: push_nav(ctx,f"day_{code}_{date}",date)
-    ctx.application.bot_data["entries"]=read_sheet()
-    ents=[e for e in ctx.application.bot_data["entries"].get(code,[]) if e["date"]==date and "amount" in e]
-    total=sum(e["amount"]for e in ents)
-    hdr=f"<b>{date}</b>"
-    body="\n".join(f"{i+1}. {e['symbols']} · {fmt_amount(e['amount'])} $" for i,e in enumerate(ents)) or "Нет записей"
-    ftr=f"<b>Итого: {fmt_amount(total)} $</b>"
-    async def show_day(msg, ctx, code, date, push=True):
-    # ...
+async def show_year(msg, ctx, year, push=True):
+    if push:
+        push_nav(ctx, f"year_{year}", year)
     pad = "\u00A0" * 8
+    btns = [
+        InlineKeyboardButton(
+            f"{pad}{MONTH_NAMES[i].capitalize()}{pad}",
+            callback_data=f"mon_{year}-{i+1:02d}"
+        )
+        for i in range(12)
+    ]
+    rows = [btns[i:i+4] for i in range(0, 12, 4)]
+    rows.extend(nav_kb(ctx).inline_keyboard)
+    await safe_edit(msg, f"<b>📆 {year}</b>", InlineKeyboardMarkup(rows))
+
+
+async def show_month(msg, ctx, code, flag=None, push=True):
+    if push:
+        year, mon = code.split("-")
+        label = f"{MONTH_NAMES[int(mon)-1].capitalize()} {year}"
+        push_nav(ctx, f"mon_{code}", label)
+    pad = "\u00A0" * 8
+    # определяем половину и записи, как раньше
+    today = dt.date.today()
+    if flag is None:
+        flag = "old" if today.strftime("%Y-%m")==code and today.day<=15 else "new"
+
+    ents = ctx.application.bot_data["entries"].get(code, [])
+    part = [e for e in ents
+            if "amount" in e and ((pdate(e["date"]).day <=15) == (flag=="old"))]
+    days = sorted({e["date"] for e in part}, key=pdate)
+    total = sum(e["amount"] for e in part)
+
+    header = f"<b>{label} · {'01–15' if flag=='old' else '16–31'}</b>"
+    body   = "\n".join(
+        f"{pad}{d}{pad}" for d in days
+    ) or "Нет записей"
+    footer = f"<b>Итого: {fmt_amount(total)} $</b>"
+
+    togg = "new" if flag=="old" else "old"
+    rows = [[InlineKeyboardButton(
+        f"{pad}{'Первая половина' if flag=='old' else 'Вторая половина'}{pad}",
+        callback_data=f"tgl_{code}_{togg}"
+    )]]
+    for d in days:
+        rows.append([InlineKeyboardButton(f"{pad}{d}{pad}", callback_data=f"day_{code}_{d}")])
+    rows.extend(nav_kb(ctx).inline_keyboard)
+
+    await safe_edit(msg, "\n".join([header, body, "", footer]), InlineKeyboardMarkup(rows))
+
+
+async def show_day(msg, ctx, code, date, push=True):
+    if push:
+        push_nav(ctx, f"day_{code}_{date}", date)
+    pad = "\u00A0" * 8
+    ctx.application.bot_data["entries"] = read_sheet()
+    ents = [
+        e for e in ctx.application.bot_data["entries"].get(code, [])
+        if e["date"] == date and "amount" in e
+    ]
+    total = sum(e["amount"] for e in ents)
+
+    header = f"<b>{date}</b>"
+    body   = "\n".join(
+        f"{i+1}. {e['symbols']} · {fmt_amount(e['amount'])} $"
+        for i, e in enumerate(ents)
+    ) or "Нет записей"
+    footer = f"<b>Итого: {fmt_amount(total)} $</b>"
+
     rows = []
     for i, e in enumerate(ents, start=1):
         rows.append([
             InlineKeyboardButton(f"{pad}❌{i}{pad}", callback_data=f"drow_{e['row_idx']}_{code}_{date}"),
             InlineKeyboardButton(f"{pad}✏️{i}{pad}", callback_data=f"edit_{e['row_idx']}_{code}_{date}")
         ])
-    rows.append([ InlineKeyboardButton(f"{pad}➕ Запись{pad}", callback_data=f"add_{code}_{date}") ])
+    rows.append([InlineKeyboardButton(f"{pad}➕ Запись{pad}", callback_data=f"add_{code}_{date}")])
     rows.extend(nav_kb(ctx).inline_keyboard)
-    await safe_edit(msg, "\n".join([hdr, body, "", ftr]), InlineKeyboardMarkup(rows))
-    
+
+    await safe_edit(msg, "\n".join([header, body, "", footer]),
+                    InlineKeyboardMarkup(rows))
+                    
 async def show_history(msg,ctx,push=True):
     if push: push_nav(ctx,"hist","История ЗП")
     ents=[e for v in ctx.application.bot_data["entries"].values() for e in v if "salary" in e]
