@@ -129,6 +129,13 @@ def nav_kb(ctx):
     c,l=peek_prev(ctx)
     return InlineKeyboardMarkup([[InlineKeyboardButton(f"⬅️ {l}",callback_data="back"),
                                   InlineKeyboardButton("🏠 Главное",callback_data="main")]])
+# Клавиатура, в которой каждая кнопка — в своей строке (чтобы занять всю ширину)
+def nav_full_kb(ctx):
+    prev_code, prev_label = pop_view(ctx)
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"⬅️ {prev_label}", callback_data="back")],
+        [InlineKeyboardButton("🏠 Главное",     callback_data="main")]
+    ])
 
 # ─── UI & FORMAT ────────────────────────────────────────────────────────────
 def fmt_amount(x:float)->str:
@@ -174,83 +181,75 @@ async def show_main(msg,ctx,push=True):
     await safe_edit(msg,"📊 <b>Главное меню</b>",main_kb())
 
 async def show_year(msg, ctx, year, push=True):
-    if push:
-        push_nav(ctx, f"year_{year}", year)
-    pad = "\u00A0" * 12   # пробелы слева/справа — подбирайте длину
-    btns = [
-        InlineKeyboardButton(
-            f"{pad}{MONTH_NAMES[i].capitalize()}{pad}",
-            callback_data=f"mon_{year}-{i+1:02d}"
-        )
-        for i in range(12)
+    if push: push_nav(ctx, f"year_{year}", year)
+    # месяцы по одному на строку
+    rows = [
+        [InlineKeyboardButton(name.capitalize(), callback_data=f"mon_{year}-{i+1:02d}")]
+        for i, name in enumerate(MONTH_NAMES)
     ]
-    rows = [btns[i:i+4] for i in range(0, 12, 4)]
-    rows.extend(nav_kb(ctx).inline_keyboard)
+    # навигация (каждая кнопка на отдельной строке)
+    rows.extend(nav_full_kb(ctx).inline_keyboard)
     await safe_edit(msg, f"<b>📆 {year}</b>", InlineKeyboardMarkup(rows))
 
 
 async def show_month(msg, ctx, code, flag=None, push=True):
     year, mon = code.split("-")
     label = f"{MONTH_NAMES[int(mon)-1].capitalize()} {year}"
-    if push:
-        push_nav(ctx, f"mon_{code}", label)
-    pad = "\u00A0" * 12
+    if push: push_nav(ctx, f"mon_{code}", label)
+
     today = dt.date.today()
     if flag is None:
         flag = "old" if today.strftime("%Y-%m")==code and today.day<=15 else "new"
 
     ents = ctx.application.bot_data["entries"].get(code, [])
-    part = [e for e in ents
-            if "amount" in e and ((pdate(e["date"]).day<=15)==(flag=="old"))]
+    part = [e for e in ents if "amount" in e and ((pdate(e["date"]).day<=15)==(flag=="old"))]
     days = sorted({e["date"] for e in part}, key=pdate)
     total = sum(e["amount"] for e in part)
 
     header = f"<b>{label} · {'01–15' if flag=='old' else '16–31'}</b>"
-    body   = "\n".join(f"{pad}{d}{pad}" for d in days) or "Нет записей"
+    body   = "\n".join(days) or "Нет записей"
     footer = f"<b>Итого: {fmt_amount(total)} $</b>"
 
     togg = "new" if flag=="old" else "old"
-    rows = [[InlineKeyboardButton(
-        f"{pad}{'Первая половина' if flag=='old' else 'Вторая половина'}{pad}",
+    rows = []
+    # переключатель первой/второй половины
+    rows.append([InlineKeyboardButton(
+        "Первая половина" if flag=="old" else "Вторая половина",
         callback_data=f"tgl_{code}_{togg}"
-    )]]
+    )])
+    # дни — по одной кнопке в строке
     for d in days:
-        rows.append([InlineKeyboardButton(f"{pad}{d}{pad}", callback_data=f"day_{code}_{d}")])
-    rows.extend(nav_kb(ctx).inline_keyboard)
+        rows.append([InlineKeyboardButton(d, callback_data=f"day_{code}_{d}")])
+    # навигация
+    rows.extend(nav_full_kb(ctx).inline_keyboard)
 
     await safe_edit(msg, "\n".join([header, body, "", footer]), InlineKeyboardMarkup(rows))
 
 
 async def show_day(msg, ctx, code, date, push=True):
-    if push:
-        push_nav(ctx, f"day_{code}_{date}", date)
-    pad = "\u00A0" * 12
+    if push: push_nav(ctx, f"day_{code}_{date}", date)
     ctx.application.bot_data["entries"] = read_sheet()
-    ents = [
-        e for e in ctx.application.bot_data["entries"].get(code, [])
-        if e["date"] == date and "amount" in e
-    ]
+    ents = [e for e in ctx.application.bot_data["entries"].get(code, []) if e["date"]==date and "amount" in e]
     total = sum(e["amount"] for e in ents)
 
     header = f"<b>{date}</b>"
-    body   = "\n".join(
-        f"{i+1}. {e['symbols']} · {fmt_amount(e['amount'])} $"
-        for i, e in enumerate(ents)
-    ) or "Нет записей"
+    body   = "\n".join(f"{i+1}. {e['symbols']} · {fmt_amount(e['amount'])} $" for i,e in enumerate(ents)) or "Нет записей"
     footer = f"<b>Итого: {fmt_amount(total)} $</b>"
 
     rows = []
+    # на каждую запись своё сочетание из двух кнопок
     for i, e in enumerate(ents, start=1):
         rows.append([
-            InlineKeyboardButton(f"{pad}❌{i}{pad}", callback_data=f"drow_{e['row_idx']}_{code}_{date}"),
-            InlineKeyboardButton(f"{pad}✏️{i}{pad}", callback_data=f"edit_{e['row_idx']}_{code}_{date}")
+            InlineKeyboardButton(f"❌{i}", callback_data=f"drow_{e['row_idx']}_{code}_{date}"),
+            InlineKeyboardButton(f"✏️{i}", callback_data=f"edit_{e['row_idx']}_{code}_{date}")
         ])
-    rows.append([InlineKeyboardButton(f"{pad}➕ Запись{pad}", callback_data=f"add_{code}_{date}")])
-    rows.extend(nav_kb(ctx).inline_keyboard)
+    # добавить новую запись
+    rows.append([InlineKeyboardButton("➕ Запись", callback_data=f"add_{code}_{date}")])
+    # навигация
+    rows.extend(nav_full_kb(ctx).inline_keyboard)
 
-    await safe_edit(msg, "\n".join([header, body, "", footer]),
-                    InlineKeyboardMarkup(rows))
-                    
+    await safe_edit(msg, "\n".join([header, body, "", footer]), InlineKeyboardMarkup(rows))
+    
 async def show_history(msg,ctx,push=True):
     if push: push_nav(ctx,"hist","История ЗП")
     ents=[e for v in ctx.application.bot_data["entries"].values() for e in v if "salary" in e]
