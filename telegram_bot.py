@@ -34,6 +34,8 @@ TOKEN        = os.getenv("TELEGRAM_BOT_TOKEN")
 DATE_FMT     = "%d.%m.%Y"
 DATE_RX      = re.compile(r"\d{2}\.\d{2}\.\d{4}$")
 HEADER_ROWS  = 4
+# В какое время шлём ежедневное напоминание
+REMIND_HH_MM = (20, 0)  # 20:00
 UNDO_WINDOW  = 10  # seconds before confirm/undo message disappears
 MONTH_NAMES  = [
     "января","февраля","марта","апреля","мая","июня",
@@ -456,6 +458,13 @@ if __name__=="__main__":
 
     app.job_queue.run_repeating(auto_sync, interval=5, first=0)
     hh,mm = REMIND_HH_MM
+    app.job_queue.run_daily(reminder, time=dt.time(hour=hh, minute=mm))
+
+    logging.info("🚀 Bot up")
+        # синхронизируем данные каждые 5 секунд
+    app.job_queue.run_repeating(auto_sync, interval=5, first=0)
+    # ежедневное напоминание в REMIND_HH_MM
+    hh, mm = REMIND_HH_MM
     app.job_queue.run_daily(reminder, time=dt.time(hour=hh, minute=mm))
 
     logging.info("🚀 Bot up")
