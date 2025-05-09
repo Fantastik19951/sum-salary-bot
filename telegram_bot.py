@@ -299,32 +299,42 @@ async def show_kpi(msg, ctx, prev=False, push=True):
     await safe_edit(msg, text, nav_kb(ctx))
 
 # ─── ADD / EDIT FLOW ─────────────────────────────────────────────────────────
-async def ask_date(msg, ctx):
-    prompt = await msg.reply_text(
-        "📅 Введите дату (ДД.MM.YYYY) или «Сегодня»",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Сегодня", callback_data="today_add")]])
-    )
-    ctx.user_data["flow"] = {"step":"date","msg":msg,"prompt":prompt}
-
-async def ask_name(msg, ctx):
+# ─── ADD / EDIT FLOW ─────────────────────────────────────────────────────────
+async def ask_name(msg: Message, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Запрос нового имени (для add и edit).
+    При edit в flow уже лежат: mode, row, period, date, old_symbols, old_amount.
+    """
     prompt = await msg.reply_text("✏️ Введите имя:")
-    ctx.user_data["flow"].update({"step":"sym","prompt":prompt})
+    # Здесь мы не сбрасываем весь flow, а только меняем step и prompt,
+    # чтобы не потерять mode/edit, period и date.
+    ctx.user_data["flow"].update({
+        "step":   "sym",
+        "prompt": prompt
+    })
 
-async def ask_amount(msg, ctx, prev=None):
+async def ask_amount(msg: Message, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Запрос суммы. Для edit подсвечиваем старое значение.
+    """
+    flow = ctx.user_data["flow"]
+    prev = flow.get("old_amount") if flow.get("mode")=="edit" else None
     if prev is None:
         text = "💰 Введите сумму:"
     else:
-        text = f"💰 Новая сумма (старое: {fmt_amount(prev)} $):"
+        text = f"💰 Введите новую сумму (старое: {fmt_amount(prev)} $):"
     prompt = await msg.reply_text(text)
-    ctx.user_data["flow"].update({"step":"val","prompt":prompt})
+    flow.update({
+        "step":   "val",
+        "prompt": prompt
+    })
 
-# ─── В process_text ─────────────────────────────────────────────────────────
 async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     flow = ctx.user_data.get("flow")
     if not flow:
         return
 
-    # Логируем для наглядности
+    # Логируем шаг и режим
     logger.info(f"process_text step={flow['step']} mode={flow.get('mode')}")
 
     txt = u.message.text.strip()
@@ -332,50 +342,59 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try: await flow["prompt"].delete()
     except: pass
 
-    # ... обработка даты и имени без изменений ...
+    # --- STEP = sym (имя) ---
+    if flow["step"] == "sym":
+        flow["symbols"] = txt
+        # Если мы в режиме edit, old_amount уже лежит в flow
+        return await ask_amount(flow["msg"], ctx)
 
-    # ОБРАБОТКА СУММЫ
+    # --- STEP = val (сумма) ---
     if flow["step"] == "val":
+        # парсим число
         try:
             val = float(txt.replace(",","."))
         except:
             return await flow["msg"].reply_text("Нужно число")
 
-        period = flow["period"]   # теперь у нас верный ключ "YYYY-MM"
-        date_str = flow["date"]
+        period = flow["period"]   # ключ в entries, например "2025-05"
+        date_str = flow["date"]   # строка вида "09.05.2025"
 
+        # 1) Режим edit
         if flow.get("mode") == "edit":
             idx = flow["row"]
-            # Пишем в ту же строку
+            # обновляем ту же строку
             update_row(idx, flow["symbols"], val)
             ctx.application.bot_data["entries"] = read_sheet()
-            # Уведомление об изменении
+
+            # уведомляем пользователя и даём кнопку undo
             resp = await flow["msg"].reply_text(
                 "✅ Изменено",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("↺ Отменить", callback_data=f"undo_edit_{idx}")
                 ]])
             )
-            # Сохраняем для отмены
+            # сохраняем старые данные для отмены
             ctx.user_data["undo_edit"] = {
-                "row": idx,
+                "row":         idx,
                 "old_symbols": flow["old_symbols"],
                 "old_amount":  flow["old_amount"],
                 "expires":     dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
             }
-            # Автоудаление уведомления
+            # автоскрытие уведомления
             ctx.application.job_queue.run_once(
                 lambda c: c.bot.delete_message(resp.chat.id, resp.message_id),
                 when=UNDO_WINDOW
             )
+
             ctx.user_data.pop("flow")
+            # возвращаем в окно дня
             return await show_day(flow["msg"], ctx, period, date_str)
 
-        # ... остальная часть add flow без изменений ...
-
+        # 2) Режим add
         flow["amount"] = val
         row = push_row(flow)
         ctx.application.bot_data["entries"] = read_sheet()
+
         resp = await flow["msg"].reply_text(
             f"✅ Добавлено: {flow['symbols']} · {fmt_amount(val)} $",
             reply_markup=InlineKeyboardMarkup([[
@@ -383,15 +402,16 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ]])
         )
         ctx.user_data["undo"] = {
-            "row": row,
+            "row":    row,
             "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
         }
         ctx.application.job_queue.run_once(
             lambda c: c.bot.delete_message(resp.chat.id, resp.message_id),
             when=UNDO_WINDOW
         )
+
         ctx.user_data.pop("flow")
-        return await show_day(flow["msg"], ctx, code, date)
+        return await show_day(flow["msg"], ctx, period, date_str)
 
 # ─── CALLBACK HANDLER ───────────────────────────────────────────────────────
 # ─── В CALLBACK HANDLER ────────────────────────────────────────────────────
