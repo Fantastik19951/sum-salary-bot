@@ -98,7 +98,7 @@ def push_row(entry):
     ]
     col = SHEET.col_values(1)[HEADER_ROWS:]
     ins = HEADER_ROWS
-    for i,v in enumerate(col, start=HEADER_ROWS+1):
+    for i, v in enumerate(col, start=HEADER_ROWS+1):
         try:
             if pdate(v) <= nd:
                 ins = i
@@ -119,7 +119,7 @@ def delete_row(idx: int):
     if SHEET:
         SHEET.delete_rows(idx)
 
-# ─── SYNC & REMINDERS ────────────────────────────────────────────────────────
+# ─── SYNC & REMINDER ────────────────────────────────────────────────────────
 async def auto_sync(ctx):
     ctx.application.bot_data["entries"] = read_sheet()
 
@@ -310,7 +310,10 @@ async def ask_name(msg, ctx):
     ctx.user_data["flow"].update({"step":"sym","prompt":prompt})
 
 async def ask_amount(msg, ctx, prev=None):
-    text = "💰 Введите сумму:" if prev is None else f"💰 Новая сумма (старое: {fmt_amount(prev)} $):"
+    if prev is None:
+        text = "💰 Введите сумму:"
+    else:
+        text = f"💰 Новая сумма (старое: {fmt_amount(prev)} $):"
     prompt = await msg.reply_text(text)
     ctx.user_data["flow"].update({"step":"val","prompt":prompt})
 
@@ -318,6 +321,7 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     flow = ctx.user_data.get("flow")
     if not flow:
         return
+
     txt = u.message.text.strip()
     await u.message.delete()
     try: await flow["prompt"].delete()
@@ -400,15 +404,19 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data, msg = q.data, q.message
 
     if data.startswith("edit_"):
-        _,r,code,day = data.split("_",3)
+        _, r, code, day = data.split("_", 3)
         idx = int(r)
         old = next(
-            e for e in ctx.application.bot_data["entries"].get(code,[])
+            e for e in ctx.application.bot_data["entries"].get(code, [])
             if e["row_idx"] == idx
         )
         ctx.user_data["flow"] = {
-            "step":"sym","mode":"edit","row":idx,
-            "date":day,"old_symbols":old["symbols"],"msg":msg
+            "step":"sym",
+            "mode":"edit",
+            "row":idx,
+            "date":day,
+            "old_symbols":old["symbols"],
+            "msg":msg
         }
         return await ask_name(msg, ctx)
 
@@ -417,14 +425,14 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return await ask_amount(msg, ctx)
 
     if data.startswith("add_"):
-        _,code,date = data.split("_",2)
+        _, code, date = data.split("_", 2)
         ctx.user_data["flow"] = {"step":"sym","mode":"add","date":date,"msg":msg}
         return await ask_name(msg, ctx)
 
     if data.startswith("undo_edit_"):
         idx = int(data.split("_",1)[1])
-        ud = ctx.user_data.get("undo_edit",{})
-        if ud.get("row")==idx and dt.datetime.utcnow() <= ud.get("expires",dt.datetime.min):
+        ud = ctx.user_data.get("undo_edit", {})
+        if ud.get("row")==idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
             update_row(idx, ud["old_symbols"], ud["old_amount"])
             ctx.application.bot_data["entries"] = read_sheet()
             return await show_main(msg, ctx)
@@ -432,8 +440,8 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("undo_"):
         idx = int(data.split("_",1)[1])
-        ud = ctx.user_data.get("undo",{})
-        if ud.get("row")==idx and dt.datetime.utcnow() <= ud.get("expires",dt.datetime.min):
+        ud = ctx.user_data.get("undo", {})
+        if ud.get("row")==idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
             delete_row(idx)
             ctx.application.bot_data["entries"] = read_sheet()
             return await show_main(msg, ctx)
@@ -442,7 +450,7 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data == "main":
         return await show_main(msg, ctx)
     if data == "back":
-        code,label = pop_view(ctx)
+        code, label = pop_view(ctx)
         if code == "main":
             return await show_main(msg, ctx, push=False)
         if code.startswith("year_"):
@@ -450,9 +458,9 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if code.startswith("mon_"):
             return await show_month(msg, ctx, code.split("_",1)[1], None, push=False)
         if code.startswith("day_"):
-            _,cc,dd = code.split("_",2)
+            _, cc, dd = code.split("_",2)
             return await show_day(msg, ctx, cc, dd, push=False)
-        if code=="hist":
+        if code == "hist":
             return await show_history(msg, ctx, push=False)
         return await show_main(msg, ctx, push=False)
 
@@ -461,10 +469,10 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data.startswith("mon_"):
         return await show_month(msg, ctx, data.split("_",1)[1])
     if data.startswith("tgl_"):
-        _,cc,fl = data.split("_",2)
+        _, cc, fl = data.split("_",2)
         return await show_month(msg, ctx, cc, fl)
     if data.startswith("day_"):
-        _,cc,dd = data.split("_",2)
+        _, cc, dd = data.split("_",2)
         return await show_day(msg, ctx, cc, dd)
     if data == "go_today":
         ctx.application.bot_data["entries"] = read_sheet()
@@ -472,16 +480,16 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return await show_day(msg, ctx, cd, ds)
 
     if data.startswith("drow_"):
-        _,r,cc,dd = data.split("_",4)[:4]
+        _, r, cc, dd = data.split("_",4)[:4]
         delete_row(int(r))
         ctx.application.bot_data["entries"] = read_sheet()
         return await show_day(msg, ctx, cc, dd)
 
     if data == "profit_now":
-        s,e = bounds_today()
+        s, e = bounds_today()
         return await show_profit(msg, ctx, s, e, "💰 Текущая ЗП")
     if data == "profit_prev":
-        s,e = bounds_prev()
+        s, e = bounds_prev()
         return await show_profit(msg, ctx, s, e, "💼 Прошлая ЗП")
     if data == "hist":
         return await show_history(msg, ctx)
