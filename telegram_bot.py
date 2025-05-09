@@ -30,7 +30,7 @@ logging.basicConfig(level=logging.INFO,
 DATE_FMT     = "%d.%m.%Y"
 DATE_RX      = re.compile(r"\d{2}\.\d{2}\.\d{4}$")
 HEADER_ROWS  = 4
-UNDO_WINDOW  = 10      # seconds for undo
+UNDO_WINDOW  = 10      # seconds
 REMIND_HH_MM = (20, 0) # daily reminder at 20:00
 MONTH_NAMES  = [
     "января","февраля","марта","апреля","мая","июня",
@@ -50,9 +50,9 @@ def connect_sheet():
 
 try:
     SHEET = connect_sheet()
-    logging.info("Connected to Google Sheet")
+    logging.info("Sheets OK")
 except Exception as e:
-    logging.error(f"Sheets connection failed: {e}")
+    logging.error(f"Sheets error: {e}")
     SHEET = None
 
 def safe_float(s: str):
@@ -67,19 +67,21 @@ def read_sheet():
     data = defaultdict(list)
     if not SHEET:
         return data
-    for idx,row in enumerate(SHEET.get_all_values(), start=1):
+    for idx, row in enumerate(SHEET.get_all_values(), start=1):
         if idx <= HEADER_ROWS or len(row) < 2:
             continue
         d = row[0].strip()
         if not is_date(d):
             continue
-        amt = safe_float(row[2]) if len(row)>2 else None
-        sal = safe_float(row[3]) if len(row)>3 else None
+        amt = safe_float(row[2]) if len(row) > 2 else None
+        sal = safe_float(row[3]) if len(row) > 3 else None
         if amt is None and sal is None:
             continue
-        e = {"date":d,"symbols":row[1].strip(),"row_idx":idx}
-        if sal is not None: e["salary"]=sal
-        else:              e["amount"]=amt
+        e = {"date": d, "symbols": row[1].strip(), "row_idx": idx}
+        if sal is not None:
+            e["salary"] = sal
+        else:
+            e["amount"] = amt
         key = f"{pdate(d).year}-{pdate(d).month:02d}"
         data[key].append(e)
     return data
@@ -88,35 +90,45 @@ def push_row(entry):
     if not SHEET:
         return None
     nd = pdate(entry["date"])
-    row = [entry["date"], entry.get("symbols",""), entry.get("amount",""), entry.get("salary","")]
+    row = [
+        entry["date"],
+        entry.get("symbols",""),
+        entry.get("amount",""),
+        entry.get("salary","")
+    ]
     col = SHEET.col_values(1)[HEADER_ROWS:]
     ins = HEADER_ROWS
     for i,v in enumerate(col, start=HEADER_ROWS+1):
         try:
-            if pdate(v) <= nd: ins = i
-            else: break
+            if pdate(v) <= nd:
+                ins = i
+            else:
+                break
         except:
             continue
     SHEET.insert_row(row, ins+1, value_input_option="USER_ENTERED")
     return ins+1
 
-def update_row(idx:int, symbols:str, amount:float):
-    if not SHEET: return
+def update_row(idx: int, symbols: str, amount: float):
+    if not SHEET:
+        return
     SHEET.update_cell(idx, 2, symbols)
     SHEET.update_cell(idx, 3, amount)
 
-def delete_row(idx:int):
+def delete_row(idx: int):
     if SHEET:
         SHEET.delete_rows(idx)
 
-# ─── SYNC & REMINDERS ────────────────────────────────────────────────────────
+# ─── SYNC & REMINDER ────────────────────────────────────────────────────────
 async def auto_sync(ctx):
     ctx.application.bot_data["entries"] = read_sheet()
 
 async def reminder(ctx):
     for cid in ctx.application.bot_data.get("chats", set()):
-        try: await ctx.bot.send_message(cid, "⏰ Не забудьте внести записи сегодня!")
-        except: pass
+        try:
+            await ctx.bot.send_message(cid, "⏰ Не забудьте внести записи сегодня!")
+        except:
+            pass
 
 # ─── NAVIGATION STACK ───────────────────────────────────────────────────────
 def init_nav(ctx):
@@ -127,44 +139,44 @@ def push_nav(ctx, code, label):
 
 def pop_view(ctx):
     nav = ctx.user_data.get("nav", deque())
-    if len(nav)>1: nav.pop()
+    if len(nav) > 1:
+        nav.pop()
     return nav[-1]
 
 def peek_prev(ctx):
     nav = ctx.user_data.get("nav", deque())
-    return nav[-2] if len(nav)>=2 else nav[-1]
+    return nav[-2] if len(nav) >= 2 else nav[-1]
 
 def nav_kb(ctx):
-    code,label = peek_prev(ctx)
+    code, label = peek_prev(ctx)
     return InlineKeyboardMarkup([[
         InlineKeyboardButton(f"⬅️ {label}", callback_data="back"),
         InlineKeyboardButton("🏠 Главное", callback_data="main")
     ]])
 
 # ─── UI HELPERS & FORMAT ────────────────────────────────────────────────────
-def fmt_amount(x:float) -> str:
-    if abs(x-int(x))<1e-9:
+def fmt_amount(x: float) -> str:
+    if abs(x - int(x)) < 1e-9:
         return f"{int(x):,}".replace(",",".")
     s = f"{x:.2f}".rstrip("0").rstrip(".")
-    i,_,f = s.partition(".")
+    i, _, f = s.partition(".")
     return f"{int(i):,}".replace(",",".") + (f and ","+f)
 
 def bounds_today():
     d = dt.date.today()
-    return (d.replace(day=1) if d.day<=15 else d.replace(day=16)), d
+    return (d.replace(day=1) if d.day <= 15 else d.replace(day=16)), d
 
 def bounds_prev():
     d = dt.date.today()
-    if d.day<=15:
+    if d.day <= 15:
         last = d.replace(day=1) - dt.timedelta(days=1)
         return (last.replace(day=16), last)
     return (d.replace(day=1), d.replace(day=15))
 
-async def safe_edit(msg:Message, text:str, kb:InlineKeyboardMarkup):
+async def safe_edit(msg: Message, text: str, kb: InlineKeyboardMarkup):
     try:
         return await msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
-    except Exception as e:
-        logging.warning(f"safe_edit failed: {e}")
+    except:
         return await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
 
 def main_kb():
@@ -197,7 +209,7 @@ async def show_year(msg, ctx, year, push=True):
     await safe_edit(msg, f"<b>📆 {year}</b>", InlineKeyboardMarkup(rows))
 
 async def show_month(msg, ctx, code, flag=None, push=True):
-    y,m = code.split("-"); label=f"{MONTH_NAMES[int(m)-1].capitalize()} {y}"
+    y,m = code.split("-"); label = f"{MONTH_NAMES[int(m)-1].capitalize()} {y}"
     if push: push_nav(ctx, f"mon_{code}", label)
     td = dt.date.today()
     if flag is None:
@@ -304,8 +316,8 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try: await flow["prompt"].delete()
     except: pass
 
-    if flow["step"]=="date":
-        if txt.lower()=="сегодня":
+    if flow["step"] == "date":
+        if txt.lower() == "сегодня":
             flow["date"] = sdate(dt.date.today())
         elif is_date(txt):
             flow["date"] = txt
@@ -313,22 +325,21 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return await flow["msg"].reply_text("Неверный формат даты")
         return await ask_name(flow["msg"], ctx)
 
-    if flow["step"]=="sym":
+    if flow["step"] == "sym":
         flow["symbols"] = txt
-        if flow.get("mode")=="edit":
+        if flow.get("mode") == "edit":
             idx = flow["row"]
-            old = next(e for e in ctx.application.bot_data["entries"][flow["date"][:7]] if e["row_idx"]==idx)
+            old = next(e for e in ctx.application.bot_data["entries"][flow["date"][:7]] if e["row_idx"] == idx)
             flow["old_amount"] = old["amount"]
         return await ask_amount(flow["msg"], ctx, flow.get("old_amount"))
 
-    if flow["step"]=="val":
+    if flow["step"] == "val":
         try: val = float(txt.replace(",","."))
         except: return await flow["msg"].reply_text("Нужно число")
         date = flow["date"]
         code = f"{pdate(date).year}-{pdate(date).month:02d}"
 
-        # EDIT
-        if flow.get("mode")=="edit":
+        if flow.get("mode") == "edit":
             idx = flow["row"]
             update_row(idx, flow["symbols"], val)
             ctx.application.bot_data["entries"] = read_sheet()
@@ -349,7 +360,6 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ctx.user_data.pop("flow")
             return await show_day(flow["msg"], ctx, code, date)
 
-        # ADD
         flow["amount"] = val
         row = push_row(flow)
         ctx.application.bot_data["entries"] = read_sheet()
@@ -375,7 +385,7 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     data, msg = q.data, q.message
 
-    # --- EDIT first ---
+    # EDIT
     if data.startswith("edit_"):
         _,r,code,day = data.split("_",3)
         idx = int(r)
@@ -386,41 +396,43 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         }
         return await ask_name(msg, ctx)
 
-    if data=="add_sal":
+    # ADD SALARY
+    if data == "add_sal":
         ctx.user_data["flow"] = {"step":"val","mode":"salary","date":sdate(dt.date.today()),"msg":msg}
         return await ask_amount(msg, ctx)
 
-    # --- ADD general ---
+    # ADD ENTRY
     if data.startswith("add_"):
         _,code,date = data.split("_",2)
         ctx.user_data["flow"] = {"step":"sym","mode":"add","date":date,"msg":msg}
         return await ask_name(msg, ctx)
 
-    # --- UNDO ---
+    # UNDO EDIT
     if data.startswith("undo_edit_"):
         idx = int(data.split("_",1)[1])
         ud = ctx.user_data.get("undo_edit",{})
-        if ud.get("row")==idx and dt.datetime.utcnow()<=ud.get("expires",dt.datetime.min):
+        if ud.get("row")==idx and dt.datetime.utcnow() <= ud.get("expires",dt.datetime.min):
             update_row(idx, ud["old_symbols"], ud["old_amount"])
             ctx.application.bot_data["entries"] = read_sheet()
             return await show_main(msg, ctx)
         return await msg.reply_text("⏱ Время вышло")
 
+    # UNDO ADD
     if data.startswith("undo_"):
         idx = int(data.split("_",1)[1])
         ud = ctx.user_data.get("undo",{})
-        if ud.get("row")==idx and dt.datetime.utcnow()<=ud.get("expires",dt.datetime.min):
+        if ud.get("row")==idx and dt.datetime.utcnow() <= ud.get("expires",dt.datetime.min):
             delete_row(idx)
             ctx.application.bot_data["entries"] = read_sheet()
             return await show_main(msg, ctx)
         return await msg.reply_text("⏱ Время вышло")
 
-    # --- NAVIGATION ---
-    if data=="main":
+    # NAVIGATION
+    if data == "main":
         return await show_main(msg, ctx)
-    if data=="back":
+    if data == "back":
         code,label = pop_view(ctx)
-        if code=="main":
+        if code == "main":
             return await show_main(msg, ctx, push=False)
         if code.startswith("year_"):
             return await show_year(msg, ctx, code.split("_",1)[1], push=False)
@@ -429,7 +441,7 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if code.startswith("day_"):
             _,cc,dd = code.split("_",2)
             return await show_day(msg, ctx, cc, dd, push=False)
-        if code=="hist":
+        if code == "hist":
             return await show_history(msg, ctx, push=False)
         return await show_main(msg, ctx, push=False)
 
@@ -443,7 +455,7 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data.startswith("day_"):
         _,cc,dd = data.split("_",2)
         return await show_day(msg, ctx, cc, dd)
-    if data=="go_today":
+    if data == "go_today":
         ctx.application.bot_data["entries"] = read_sheet()
         td = dt.date.today(); ds = sdate(td); cd = f"{td.year}-{td.month:02d}"
         return await show_day(msg, ctx, cd, ds)
@@ -454,20 +466,20 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.application.bot_data["entries"] = read_sheet()
         return await show_day(msg, ctx, cc, dd)
 
-    if data=="profit_now":
+    if data == "profit_now":
         s,e = bounds_today()
         return await show_profit(msg, ctx, s, e, "💰 Текущая ЗП")
-    if data=="profit_prev":
+    if data == "profit_prev":
         s,e = bounds_prev()
         return await show_profit(msg, ctx, s, e, "💼 Прошлая ЗП")
-    if data=="hist":
+    if data == "hist":
         return await show_history(msg, ctx)
-    if data=="kpi":
+    if data == "kpi":
         return await show_kpi(msg, ctx, False)
-    if data=="kpi_prev":
+    if data == "kpi_prev":
         return await show_kpi(msg, ctx, True)
 
-# ─── GLOBAL ERROR HANDLER ───────────────────────────────────────────────────
+# ─── ERROR HANDLER ─────────────────────────────────────────────────────────
 async def error_handler(update, context):
     logging.error(f"Unhandled exception for update {update!r}", exc_info=context.error)
 
