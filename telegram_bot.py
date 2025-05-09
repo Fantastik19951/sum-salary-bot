@@ -246,57 +246,62 @@ async def show_day(msg, ctx, code, date, push=True):
     rows.extend(nav_kb(ctx).inline_keyboard)
     await safe_edit(msg, "\n".join([header, body, "", footer]), InlineKeyboardMarkup(rows))
 
-async def show_history(msg, ctx, push=True):
-    if push: push_nav(ctx, "hist", "История ЗП")
+# ─── VIEW FUNCTIONS ─────────────────────────────────────────────────────────
+
+async def show_profit(msg, ctx, start, end, title):
+    # убрали push_nav — чтобы "Назад" не застревал в Profit
+    ents = [
+        e for v in ctx.application.bot_data["entries"].values() for e in v
+        if start <= pdate(e['date']) <= end and "amount" in e
+    ]
+    tot = sum(e["amount"] for e in ents)
+    text = f"{title} ({sdate(start)} – {sdate(end)})\n<b>10%: {fmt_amount(tot*0.10)} $</b>"
+    await safe_edit(msg, text, nav_kb(ctx))
+
+
+async def show_kpi(msg, ctx, prev: bool):
+    # убрали push_nav — чтобы "Назад" сразу шёл туда, откуда пришли
+    if prev:
+        start,end = bounds_prev()
+        title = "📊 KPI прошлого"
+    else:
+        start,end = bounds_today()
+        title = "📊 KPI текущего"
+    ents = [
+        e for v in ctx.application.bot_data["entries"].values() for e in v
+        if start<=pdate(e['date'])<=end and "amount" in e
+    ]
+    if not ents:
+        return await safe_edit(msg, "Нет данных", nav_kb(ctx))
+    turn = sum(e["amount"] for e in ents)
+    sal  = turn * 0.10
+    days = len({e["date"] for e in ents})
+    plen = (end - start).days + 1
+    avg  = sal / days if days else 0
+    forecast = round(avg * plen, 2) if not prev else sal
+    text = (
+        f"{title} ({sdate(start)} – {sdate(end)})\n"
+        f"• Оборот: {fmt_amount(turn)} $\n"
+        f"• ЗП 10%: {fmt_amount(sal)} $\n"
+        f"• Дней с данными: {days}/{plen}\n"
+        f"• Среднее/день: {fmt_amount(avg)} $\n"
+        f"• Прогноз: {fmt_amount(forecast)} $"
+    )
+    await safe_edit(msg, text, nav_kb(ctx))
+
+
+async def show_history(msg, ctx):
+    # тоже убираем push_nav, чтобы "Назад" возвращал в меню, откуда пришли
     ents = [e for v in ctx.application.bot_data["entries"].values() for e in v if "salary" in e]
     if not ents:
         text = "История пуста"
     else:
         lines = [
             f"• {pdate(e['date']).day} {MONTH_NAMES[pdate(e['date']).month-1]} {pdate(e['date']).year} — {fmt_amount(e['salary'])} $"
-            for e in sorted(ents, key=lambda x:pdate(x['date']))
+            for e in sorted(ents, key=lambda x: pdate(x['date']))
         ]
         text = "<b>📜 История ЗП</b>\n" + "\n".join(lines)
     await safe_edit(msg, text, nav_kb(ctx))
-
-async def show_profit(msg, ctx, start, end, title, push=True):
-    if push: push_nav(ctx, title, title)
-    ents = [e for v in ctx.application.bot_data["entries"].values() for e in v
-            if start<=pdate(e['date'])<=end and "amount" in e]
-    tot = sum(e["amount"] for e in ents)
-    # KPI: выносим период и 10% на отдельные строки
-    text = (
-        f"<b>{title}</b>\n"
-        f"Период: {sdate(start)} – {sdate(end)}\n"
-        f"10% от оборота: {fmt_amount(tot*0.10)} $"
-    )
-    await safe_edit(msg, text, nav_kb(ctx))
-
-async def show_kpi(msg, ctx, prev=False, push=True):
-    if prev:
-        start,end = bounds_prev(); title="📊 KPI прошлого"
-    else:
-        start,end = bounds_today(); title="📊 KPI текущего"
-    if push: push_nav(ctx, title, title)
-    ents = [e for v in ctx.application.bot_data["entries"].values() for e in v
-            if start<=pdate(e['date'])<=end and "amount" in e]
-    if not ents:
-        return await safe_edit(msg, "Нет данных", nav_kb(ctx))
-    turn = sum(e["amount"] for e in ents)
-    sal  = turn * 0.10
-    days = len({e["date"] for e in ents})
-    plen = (end-start).days + 1
-    avg  = sal / days if days else 0
-    text = (
-        f"<b>{title}</b>\n"
-        f"Период: {sdate(start)} – {sdate(end)}\n"
-        f"• Оборот: {fmt_amount(turn)} $\n"
-        f"• ЗП10%: {fmt_amount(sal)} $\n"
-        f"• Дней: {days}/{plen}\n"
-        f"• Ср/день: {fmt_amount(avg)} $"
-    )
-    await safe_edit(msg, text, nav_kb(ctx))
-
 # ─── ADD / EDIT FLOW ─────────────────────────────────────────────────────────
 async def ask_date(msg, ctx):
     prompt = await msg.reply_text(
