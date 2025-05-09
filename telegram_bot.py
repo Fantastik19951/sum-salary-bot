@@ -258,7 +258,7 @@ async def show_profit(msg, ctx, start, end, title):
     await safe_edit(msg, text, nav_main_kb())
 
 async def show_kpi(msg: Message, ctx: ContextTypes.DEFAULT_TYPE, prev: bool):
-    # Определяем границы периода
+    # Границы периода: первая или вторая половина текущего (или предыдущего) месяца
     if prev:
         start, end = bounds_prev()
         title = "📊 KPI прошлого"
@@ -266,49 +266,42 @@ async def show_kpi(msg: Message, ctx: ContextTypes.DEFAULT_TYPE, prev: bool):
         start, end = bounds_today()
         title = "📊 KPI текущего"
 
-    # Собираем записи по суммам за период
-    ents = [
-        e for v in ctx.application.bot_data["entries"].values()
-        for e in v
-        if start <= pdate(e['date']) <= end and "amount" in e
+    # Собираем все записи amount в этот период
+    entries = [
+        e for v in ctx.application.bot_data["entries"].values() for e in v
+        if start <= pdate(e["date"]) <= end and "amount" in e
     ]
-    if not ents:
-        return await safe_edit(msg, "<b>Нет данных</b>", nav_main_kb())
+    if not entries:
+        return await safe_edit(msg, "<b>Нет данных за период</b>", nav_main_kb())
 
-    # Оборот и зарплата
-    turn   = sum(e["amount"] for e in ents)
-    salary = turn * 0.10
+    # Сумма всех записей и 10% зарплата
+    total_turn = sum(e["amount"] for e in entries)
+    total_salary = total_turn * 0.10
 
-    # Сколько дней уже заполнено (включая любые воскресенья, если в них есть записи)
-    filled_dates = { pdate(e['date']) for e in ents }
+    # Дни, в которые уже есть записи
+    filled_dates = {pdate(e["date"]) for e in entries}
     days_with_data = len(filled_dates)
 
-    # Средняя ЗП в день по фактическим заполненным
-    avg_per_day = salary / days_with_data if days_with_data else 0
+    # Средняя ЗП в день по факту заполненных дней
+    avg_per_day = total_salary / days_with_data if days_with_data else 0
 
-    # Вычисляем рабочие дни периода:
-    #   - все дни с weekday() 0–5 (пн–сб)
-    #   - дополнительно включаем любые воскресенья, в которых есть записи
-    total_work_days = 0
-    for offset in range((end - start).days + 1):
-        d = start + dt.timedelta(days=offset)
-        if d.weekday() < 6:
-            total_work_days += 1
-        elif d.weekday() == 6 and d in filled_dates:
-            total_work_days += 1
+    # Длина периода всегда 15 дней
+    period_len = 15
 
-    # Прогноз на все рабочие дни
-    forecast = round(avg_per_day * total_work_days, 2)
+    # Прогноз на весь период
+    forecast = round(avg_per_day * period_len, 2)
 
-    # Формируем вывод
+    # Собираем текст
     text = (
         f"<b>{title} ({sdate(start)} – {sdate(end)})</b>\n"
-        f"• Оборот: {fmt_amount(turn)} $\n"
-        f"• ЗП 10%: {fmt_amount(salary)} $\n"
-        f"• Дней с данными: {days_with_data}/{total_work_days}\n"
+        f"• Оборот: {fmt_amount(total_turn)} $\n"
+        f"• ЗП 10%: {fmt_amount(total_salary)} $\n"
+        f"• Дней с данными: {days_with_data}/{period_len}\n"
         f"• Среднее/день: {fmt_amount(avg_per_day)} $\n"
         f"• Прогноз: {fmt_amount(forecast)} $"
     )
+
+    # Кнопка возвращения в главное меню
     await safe_edit(msg, text, nav_main_kb())
 
 async def show_history(msg, ctx):
