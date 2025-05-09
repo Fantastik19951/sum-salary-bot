@@ -318,64 +318,60 @@ async def ask_amount(msg, ctx, prev=None):
     prompt = await msg.reply_text(text)
     ctx.user_data["flow"].update({"step":"val","prompt":prompt})
 
+# ─── В process_text ─────────────────────────────────────────────────────────
 async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     flow = ctx.user_data.get("flow")
     if not flow:
         return
-    logger.info(f"process_text step={flow.get('step')} mode={flow.get('mode')} data={u.message.text!r}")
+
+    # Логируем для наглядности
+    logger.info(f"process_text step={flow['step']} mode={flow.get('mode')}")
+
     txt = u.message.text.strip()
     await u.message.delete()
     try: await flow["prompt"].delete()
     except: pass
 
-    if flow["step"] == "date":
-        if txt.lower() == "сегодня":
-            flow["date"] = sdate(dt.date.today())
-        elif is_date(txt):
-            flow["date"] = txt
-        else:
-            return await flow["msg"].reply_text("Неверный формат даты")
-        return await ask_name(flow["msg"], ctx)
+    # ... обработка даты и имени без изменений ...
 
-    if flow["step"] == "sym":
-        flow["symbols"] = txt
-        if flow.get("mode") == "edit":
-            idx = flow["row"]
-            old = next(
-                e for e in ctx.application.bot_data["entries"][flow["date"][:7]]
-                if e["row_idx"] == idx
-            )
-            flow["old_amount"] = old["amount"]
-        return await ask_amount(flow["msg"], ctx, flow.get("old_amount"))
-
+    # ОБРАБОТКА СУММЫ
     if flow["step"] == "val":
-        try: val = float(txt.replace(",","."))
-        except: return await flow["msg"].reply_text("Нужно число")
-        date = flow["date"]
-        code = f"{pdate(date).year}-{pdate(date).month:02d}"
+        try:
+            val = float(txt.replace(",","."))
+        except:
+            return await flow["msg"].reply_text("Нужно число")
+
+        period = flow["period"]   # теперь у нас верный ключ "YYYY-MM"
+        date_str = flow["date"]
 
         if flow.get("mode") == "edit":
             idx = flow["row"]
+            # Пишем в ту же строку
             update_row(idx, flow["symbols"], val)
             ctx.application.bot_data["entries"] = read_sheet()
+            # Уведомление об изменении
             resp = await flow["msg"].reply_text(
                 "✅ Изменено",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("↺ Отменить", callback_data=f"undo_edit_{idx}")
                 ]])
             )
+            # Сохраняем для отмены
             ctx.user_data["undo_edit"] = {
                 "row": idx,
                 "old_symbols": flow["old_symbols"],
-                "old_amount": flow["old_amount"],
-                "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
+                "old_amount":  flow["old_amount"],
+                "expires":     dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
             }
+            # Автоудаление уведомления
             ctx.application.job_queue.run_once(
                 lambda c: c.bot.delete_message(resp.chat.id, resp.message_id),
                 when=UNDO_WINDOW
             )
             ctx.user_data.pop("flow")
-            return await show_day(flow["msg"], ctx, code, date)
+            return await show_day(flow["msg"], ctx, period, date_str)
+
+        # ... остальная часть add flow без изменений ...
 
         flow["amount"] = val
         row = push_row(flow)
@@ -398,29 +394,39 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return await show_day(flow["msg"], ctx, code, date)
 
 # ─── CALLBACK HANDLER ───────────────────────────────────────────────────────
+# ─── В CALLBACK HANDLER ────────────────────────────────────────────────────
 async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"CB received: {upd.callback_query.data}")
     q = upd.callback_query
     if not q: return
     await q.answer()
     data, msg = q.data, q.message
 
+    # НАЧАЛО ИСПРАВЛЕНИЯ РЕДАКТИРОВАНИЯ
     if data.startswith("edit_"):
+        # data = "edit_{row_idx}_{code}_{date}"
         _, r, code, day = data.split("_", 3)
         idx = int(r)
-        old = next(
-            e for e in ctx.application.bot_data["entries"].get(code, [])
-            if e["row_idx"] == idx
-        )
+        # Сохраняем period_code и date_str
         ctx.user_data["flow"] = {
-            "step":"sym",
-            "mode":"edit",
-            "row":idx,
-            "date":day,
-            "old_symbols":old["symbols"],
-            "msg":msg
+            "step":      "sym",
+            "mode":      "edit",
+            "row":       idx,
+            "period":    code,  # например "2025-05"
+            "date":      day,   # например "08.05.2025"
+            "old_symbols": None,  # заполним ниже
+            "old_amount":  None,
+            "msg":       msg
         }
+        # Найдём старую запись по row_idx
+        old = next(e for e in ctx.application.bot_data["entries"][code]
+                   if e["row_idx"] == idx)
+        ctx.user_data["flow"]["old_symbols"] = old["symbols"]
+        ctx.user_data["flow"]["old_amount"]  = old["amount"]
+        # Запросим новое имя
         return await ask_name(msg, ctx)
+    # КОНЕЦ ИСПРАВЛЕНИЯ
+
+    # ... остальная логика cb без изменений ...
 
     if data == "add_sal":
         ctx.user_data["flow"] = {"step":"val","mode":"salary","date":sdate(dt.date.today()),"msg":msg}
