@@ -186,16 +186,16 @@ async def safe_edit(msg: Message, text: str, kb=None):
 def main_kb():
     PAD = "\u00A0"*2
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{PAD*5}📅 2024{PAD*5}", callback_data="year_2024"),
-         InlineKeyboardButton(f"{PAD*5}📅 2025{PAD*5}", callback_data="year_2025")],
-        [InlineKeyboardButton(f"{PAD*10}📆 Сегодня{PAD*10}", callback_data="go_today")],
-        [InlineKeyboardButton(f"{PAD*10}➕ Запись{PAD*10}", callback_data="add_rec")],
-        [InlineKeyboardButton(f"{PAD*8}💵 Зарплата{PAD*8}", callback_data="add_sal")],
-        [InlineKeyboardButton(f"{PAD*8}💰 Текущая ЗП{PAD*8}", callback_data="profit_now"),
-         InlineKeyboardButton(f"{PAD*8}💼 Прошлая ЗП{PAD*8}", callback_data="profit_prev")],
-        [InlineKeyboardButton(f"{PAD*10}📜 История ЗП{PAD*10}", callback_data="hist")],
-        [InlineKeyboardButton(f"{PAD*8}📊 KPI тек.{PAD*8}", callback_data="kpi"),
-         InlineKeyboardButton(f"{PAD*8}📊 KPI прош.{PAD*8}", callback_data="kpi_prev")],
+        [InlineKeyboardButton(f"{PAD}📅 2024{PAD}", callback_data="year_2024"),
+         InlineKeyboardButton(f"{PAD}📅 2025{PAD}", callback_data="year_2025")],
+        [InlineKeyboardButton(f"{PAD}📆 Сегодня{PAD}", callback_data="go_today")],
+        [InlineKeyboardButton(f"{PAD}➕ Запись{PAD}", callback_data="add_rec")],
+        [InlineKeyboardButton(f"{PAD}💵 Зарплата{PAD}", callback_data="add_sal")],
+        [InlineKeyboardButton(f"{PAD*5}💰 Текущая ЗП{PAD*10}", callback_data="profit_now"),
+         InlineKeyboardButton(f"{PAD*5}💼 Прошлая ЗП{PAD*10}", callback_data="profit_prev")],
+        [InlineKeyboardButton(f"{PAD}📜 История ЗП{PAD}", callback_data="hist")],
+        [InlineKeyboardButton(f"{PAD}📊 KPI тек.{PAD}", callback_data="kpi"),
+         InlineKeyboardButton(f"{PAD}📊 KPI прош.{PAD}", callback_data="kpi_prev")],
     ])
 
 # ─── VIEWS ──────────────────────────────────────────────────────────────────
@@ -458,11 +458,15 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # go today
     if d == "go_today":
-        ctx.application.bot_data["entries"] = read_sheet()
-        today = sdate(dt.date.today())
-        period = today[:7]
-        return await show_day(msg, ctx, period, today)
-
+    # 1) обновляем данные
+    ctx.application.bot_data["entries"] = read_sheet()
+    today = sdate(dt.date.today())
+    period = today[:7]
+    # 2) если мы пришли из "add_rec→Сегодня", то запускаем диалог
+    if ctx.user_data.get("flow", {}).get("step") == "date":
+        return await ask_name(msg, ctx)
+    # 3) иначе — обычный просмотр
+    return await show_day(msg, ctx, period, today)
     # undo
     if d.startswith("undo_"):
         idx = int(d.split("_",1)[1])
