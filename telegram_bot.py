@@ -23,7 +23,8 @@ if not TOKEN:
 if GOOGLE_KEY_JSON and not os.path.exists("credentials.json"):
     with open("credentials.json", "w", encoding="utf-8") as f:
         f.write(GOOGLE_KEY_JSON)
-
+        
+logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s | %(levelname)s | %(message)s")
 
@@ -318,6 +319,7 @@ async def ask_amount(msg, ctx, prev=None):
     ctx.user_data["flow"].update({"step":"val","prompt":prompt})
 
 async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"process_text step={flow.get('step')} mode={flow.get('mode')} data={u.message.text!r}")
     flow = ctx.user_data.get("flow")
     if not flow:
         return
@@ -398,6 +400,7 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ─── CALLBACK HANDLER ───────────────────────────────────────────────────────
 async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"CB received: {upd.callback_query.data}")
     q = upd.callback_query
     if not q: return
     await q.answer()
