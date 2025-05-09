@@ -419,10 +419,42 @@ async def process_text(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
         return await show_day(flow["msg"], ctx, period, date_str)
 
 # ─── CALLBACK HANDLER ───────────────────────────────────────────────────────
-async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
+async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = upd.callback_query
-    if not q: return
+    if not q:
+        return
     await q.answer()
+    d, msg = q.data, q.message
+
+    # ─── ВОЗВРАТ ОБРАБОТКИ КНОПОК ДОБАВЛЕНИЯ ─────────────────────────────────
+    if d == "add_rec":
+        # Начинаем flow добавления записи через выбор даты
+        return await ask_date(msg, ctx)
+
+    if d.startswith("add_"):
+        # Добавление в конкретный день: callback_data = f"add_{code}_{date}"
+        _, code, date = d.split("_", 2)
+        ctx.user_data["flow"] = {
+            "step": "sym",      # сразу спрашиваем имя
+            "mode": "add",
+            "date": date,
+            "msg": msg
+        }
+        return await ask_name(msg, ctx)
+
+    if d == "add_sal":
+        # Добавление зарплаты на сегодня
+        today = sdate(dt.date.today())
+        ctx.user_data["flow"] = {
+            "step": "val",
+            "mode": "salary",
+            "date": today,
+            "msg": msg
+        }
+        return await ask_amount(msg, ctx)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # ... дальше ваши existing ветки edit_, undo_, main, back, year_, mon_, etc.
     d, msg = q.data, q.message
 
     # EDIT FLOW
