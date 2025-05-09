@@ -5,22 +5,29 @@ import re
 from collections import defaultdict, deque
 
 from dotenv import load_dotenv
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update, Message
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler,
-    CallbackQueryHandler, MessageHandler,
-    ContextTypes, filters
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    MessageHandler, ContextTypes, filters
 )
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# ─── CONFIG & LOGGING ───────────────────────────────────────────────────────
+# ─── СНАЧАЛА СНЯТИЕ WEBHOOK/ОСТАНОВКА ВСЕХ POLLING ──────────────────────────
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN не задан")
+# удаляем все вебхуки и сбрасываем pending updates
+Bot(TOKEN).delete_webhook(drop_pending_updates=True)
+logging.info("Webhook deleted, pending updates dropped — остаётся только polling")
+
+# ─── ДАЛЬШЕ ВАШ СТАРЫЙ КОД ───────────────────────────────────────────────────
 GOOGLE_KEY_JSON = os.getenv("GOOGLE_KEY_JSON")
 if not os.path.exists("credentials.json") and GOOGLE_KEY_JSON:
     with open("credentials.json", "w", encoding="utf-8") as f:
         f.write(GOOGLE_KEY_JSON)
+
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s | %(levelname)s | %(message)s")
 
@@ -29,12 +36,10 @@ DATE_RX      = re.compile(r"\d{2}\.\d{2}\.\d{4}$")
 HEADER_ROWS  = 4
 UNDO_WINDOW  = 10
 REMIND_HH_MM = (20, 0)
-MONTH_NAMES  = [
-    "января","февраля","марта","апреля","мая","июня",
-    "июля","августа","сентября","октября","ноября","декабря"
-]
+MONTH_NAMES  = ["января","февраля","марта","апреля","мая","июня",
+                "июля","августа","сентября","октября","ноября","декабря"]
 
-# ─── SHEETS I/O ──────────────────────────────────────────────────────────────
+# ─── GOOGLE SHEETS I/O ──────────────────────────────────────────────────────
 def connect_sheet():
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -67,8 +72,8 @@ def read_sheet():
         if idx<=HEADER_ROWS or len(row)<2: continue
         d=row[0].strip()
         if not is_date(d): continue
-        amt = safe_float(row[2]) if len(row)>2 else None
-        sal = safe_float(row[3]) if len(row)>3 else None
+        amt=safe_float(row[2]) if len(row)>2 else None
+        sal=safe_float(row[3]) if len(row)>3 else None
         if amt is None and sal is None: continue
         e={"date":d,"symbols":row[1].strip(),"row_idx":idx}
         if sal is not None: e["salary"]=sal
@@ -79,14 +84,14 @@ def read_sheet():
 
 def push_row(entry):
     if not SHEET: return None
-    nd=pdate(entry["date"])
-    row=[entry["date"],entry.get("symbols",""),
-         entry.get("amount",""),entry.get("salary","")]
-    col=SHEET.col_values(1)[HEADER_ROWS:]
-    ins=HEADER_ROWS
+    nd = pdate(entry["date"])
+    row = [entry["date"], entry.get("symbols",""),
+           entry.get("amount",""), entry.get("salary","")]
+    col = SHEET.col_values(1)[HEADER_ROWS:]
+    ins = HEADER_ROWS
     for i,v in enumerate(col, start=HEADER_ROWS+1):
         try:
-            if pdate(v)<=nd: ins=i
+            if pdate(v) <= nd: ins = i
             else: break
         except: continue
     SHEET.insert_row(row, ins+1, value_input_option="USER_ENTERED")
@@ -100,42 +105,44 @@ def update_row(idx:int, symbols:str, amount:float):
 def delete_row(idx:int):
     if SHEET: SHEET.delete_rows(idx)
 
-# ─── SYNC & REMINDERS ────────────────────────────────────────────────────────
+# ─── синхронизация и напоминалка ─────────────────────────────────────────────
 async def auto_sync(ctx):
-    ctx.application.bot_data["entries"]=read_sheet()
+    ctx.application.bot_data["entries"] = read_sheet()
 
 async def reminder(ctx):
     for cid in ctx.application.bot_data.get("chats", set()):
-        try: await ctx.bot.send_message(cid,"⏰ Не забудьте внести записи сегодня!")
+        try: await ctx.bot.send_message(cid, "⏰ Не забудьте внести записи сегодня!")
         except: pass
 
-# ─── NAVIGATION ─────────────────────────────────────────────────────────────
+# ─── стек навигации ───────────────────────────────────────────────────────────
 def init_nav(ctx):
-    ctx.user_data["nav"]=deque([("main","Главное")])
+    ctx.user_data["nav"] = deque([("main","Главное")])
 
 def push_nav(ctx, code, label):
-    ctx.user_data.setdefault("nav",deque()).append((code,label))
+    ctx.user_data.setdefault("nav", deque()).append((code,label))
 
 def pop_view(ctx):
-    nav=ctx.user_data.get("nav",deque())
+    nav = ctx.user_data.get("nav", deque())
     if len(nav)>1: nav.pop()
     return nav[-1]
 
 def peek_prev(ctx):
-    nav=ctx.user_data.get("nav",deque())
+    nav = ctx.user_data.get("nav", deque())
     return nav[-2] if len(nav)>=2 else nav[-1]
 
 def nav_kb(ctx):
-    c,l=peek_prev(ctx)
-    return InlineKeyboardMarkup([[InlineKeyboardButton(f"⬅️ {l}",callback_data="back"),
-                                  InlineKeyboardButton("🏠 Главное",callback_data="main")]])
+    code,label = peek_prev(ctx)
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(f"⬅️ {label}", callback_data="back"),
+        InlineKeyboardButton("🏠 Главное", callback_data="main")
+    ]])
 
-# ─── UI HELPERS ─────────────────────────────────────────────────────────────
+# ─── вспомогательные UI ─────────────────────────────────────────────────────
 def fmt_amount(x:float)->str:
     if abs(x-int(x))<1e-9:
         return f"{int(x):,}".replace(",",".")
     s=f"{x:.2f}".rstrip("0").rstrip(".")
-    i,_,f=s.partition(".")
+    i,_,f = s.partition(".")
     return f"{int(i):,}".replace(",",".") + (f and ","+f)
 
 def bounds_today():
@@ -159,17 +166,20 @@ async def safe_edit(msg:Message, text:str, kb:InlineKeyboardMarkup):
 def main_kb():
     pad="\u00A0"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{pad*4}📅 2024{pad*4}","year_2024"),
-         InlineKeyboardButton(f"{pad*4}📅 2025{pad*4}","year_2025")],
-        [InlineKeyboardButton(f"{pad*8}📆 Сегодня{pad*8}","go_today")],
-        [InlineKeyboardButton(f"{pad*8}➕ Запись{pad*8}","add_rec")],
-        [InlineKeyboardButton(f"{pad*8}💵 Зарплата{pad*8}","add_sal")],
-        [InlineKeyboardButton(f"{pad*6}💰 Текущая ЗП{pad*6}","profit_now"),
-         InlineKeyboardButton(f"{pad*6}💼 Прошлая ЗП{pad*6}","profit_prev")],
-        [InlineKeyboardButton(f"{pad*8}📜 История ЗП{pad*8}","hist")],
-        [InlineKeyboardButton(f"{pad*6}📊 KPI тек.{pad*6}","kpi"),
-         InlineKeyboardButton(f"{pad*6}📊 KPI прош.{pad*6}","kpi_prev")],
+        [InlineKeyboardButton(f"{pad*4}📅 2024{pad*4}", "year_2024"),
+         InlineKeyboardButton(f"{pad*4}📅 2025{pad*4}", "year_2025")],
+        [InlineKeyboardButton(f"{pad*8}📆 Сегодня{pad*8}", "go_today")],
+        [InlineKeyboardButton(f"{pad*8}➕ Запись{pad*8}", "add_rec")],
+        [InlineKeyboardButton(f"{pad*8}💵 Зарплата{pad*8}", "add_sal")],
+        [InlineKeyboardButton(f"{pad*6}💰 Текущая ЗП{pad*6}", "profit_now"),
+         InlineKeyboardButton(f"{pad*6}💼 Прошлая ЗП{pad*6}", "profit_prev")],
+        [InlineKeyboardButton(f"{pad*8}📜 История ЗП{pad*8}", "hist")],
+        [InlineKeyboardButton(f"{pad*6}📊 KPI тек.{pad*6}", "kpi"),
+         InlineKeyboardButton(f"{pad*6}📊 KPI прош.{pad*6}", "kpi_prev")],
     ])
+
+# ─── view functions, add/edit, callback handler, start/run_polling ───────────
+# … (оставляем всё, как в предыдущем ответе, без изменений) …
 
 # ─── VIEWS ─────────────────────────────────────────────────────────────────
 async def show_main(msg,ctx,push=True):
