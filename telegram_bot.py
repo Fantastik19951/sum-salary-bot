@@ -179,8 +179,8 @@ def main_kb():
         [InlineKeyboardButton(f"{PAD}➕ Запись{PAD}", callback_data="add_rec")],
         [InlineKeyboardButton(f"{PAD}💵 Зарплата{PAD}", callback_data="add_sal")],
         [
-            InlineKeyboardButton(f"{PAD*6}💰 Текущая ЗП{PAD*8}", callback_data="profit_now"),
-            InlineKeyboardButton(f"{PAD*6}💼 Прошлая ЗП{PAD*8}", callback_data="profit_prev"),
+            InlineKeyboardButton(f"{PAD}💰 Текущая ЗП{PAD}", callback_data="profit_now"),
+            InlineKeyboardButton(f"{PAD}💼 Прошлая ЗП{PAD}", callback_data="profit_prev"),
         ],
         [InlineKeyboardButton(f"{PAD}📜 История ЗП{PAD}", callback_data="hist")],
         [
