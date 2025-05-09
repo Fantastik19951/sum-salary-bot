@@ -258,7 +258,7 @@ async def show_profit(msg, ctx, start, end, title):
     await safe_edit(msg, text, nav_main_kb())
 
 async def show_kpi(msg: Message, ctx: ContextTypes.DEFAULT_TYPE, prev: bool):
-    # Границы периода: первая или вторая половина текущего (или предыдущего) месяца
+    # Границы периода (первая или вторая половина)
     if prev:
         start, end = bounds_prev()
         title = "📊 KPI прошлого"
@@ -274,22 +274,27 @@ async def show_kpi(msg: Message, ctx: ContextTypes.DEFAULT_TYPE, prev: bool):
     if not entries:
         return await safe_edit(msg, "<b>Нет данных за период</b>", nav_main_kb())
 
-    # Сумма всех записей и 10% зарплата
-    total_turn = sum(e["amount"] for e in entries)
+    # Оборот и 10% ЗП
+    total_turn   = sum(e["amount"] for e in entries)
     total_salary = total_turn * 0.10
 
-    # Дни, в которые уже есть записи
-    filled_dates = {pdate(e["date"]) for e in entries}
+    # Уникальные даты, в которые есть записи
+    filled_dates   = {pdate(e["date"]) for e in entries}
     days_with_data = len(filled_dates)
 
-    # Средняя ЗП в день по факту заполненных дней
+    # Среднее за день по фактически заполненным
     avg_per_day = total_salary / days_with_data if days_with_data else 0
 
     # Длина периода всегда 15 дней
     period_len = 15
 
-    # Прогноз на весь период
-    forecast = round(avg_per_day * period_len, 2)
+    # Прогноз
+    if prev:
+        # Для прошлого периода прогноз равен фактической ЗП
+        forecast = total_salary
+    else:
+        # Для текущего — экстраполируем на все 15 дней
+        forecast = round(avg_per_day * period_len, 2)
 
     # Собираем текст
     text = (
@@ -301,7 +306,7 @@ async def show_kpi(msg: Message, ctx: ContextTypes.DEFAULT_TYPE, prev: bool):
         f"• Прогноз: {fmt_amount(forecast)} $"
     )
 
-    # Кнопка возвращения в главное меню
+    # Выводим с навигацией «Главное»
     await safe_edit(msg, text, nav_main_kb())
 
 async def show_history(msg, ctx):
