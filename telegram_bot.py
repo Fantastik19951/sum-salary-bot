@@ -24,9 +24,9 @@ if GOOGLE_KEY_JSON and not os.path.exists("credentials.json"):
     with open("credentials.json", "w", encoding="utf-8") as f:
         f.write(GOOGLE_KEY_JSON)
         
-logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger(__name__)
 
 DATE_FMT     = "%d.%m.%Y"
 DATE_RX      = re.compile(r"\d{2}\.\d{2}\.\d{4}$")
@@ -319,11 +319,10 @@ async def ask_amount(msg, ctx, prev=None):
     ctx.user_data["flow"].update({"step":"val","prompt":prompt})
 
 async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"process_text step={flow.get('step')} mode={flow.get('mode')} data={u.message.text!r}")
     flow = ctx.user_data.get("flow")
     if not flow:
         return
-
+    logger.info(f"process_text step={flow.get('step')} mode={flow.get('mode')} data={u.message.text!r}")
     txt = u.message.text.strip()
     await u.message.delete()
     try: await flow["prompt"].delete()
