@@ -168,12 +168,14 @@ def main_kb():
          InlineKeyboardButton(f"{pad*6}📊 KPI прош.{pad*6}", "kpi_prev")],
     ])
 
-async def safe_edit(msg: Message, text: str, kb):
+async def safe_edit(msg: Message, text: str, kb: InlineKeyboardMarkup):
     try:
-        await msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
-    except:
-        await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
-
+        return await msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception as e:
+        logging.warning(f"safe_edit failed: {e}")
+        # Если edit_text упал, отправляем обычный reply
+        return await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
+        
 def fmt_amount(x: float) -> str:
     if abs(x-int(x))<1e-9:
         return f"{int(x):,}".replace(",",".")
@@ -460,4 +462,22 @@ if __name__=="__main__":
     app.job_queue.run_repeating(auto_sync, interval=5, first=0)
     hh,mm=REMIND_HH_MM
     app.job_queue.run_daily(reminder, time=dt.time(hour=hh, minute=mm))
+    # ─── ГЛОБАЛЬНЫЙ ERROR HANDLER ────────────────────────────────────────────────
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logging.error(f"Exception while handling update {update!r}", exc_info=context.error)
+
+if __name__ == "__main__":
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    # … ваши app.add_handler(...) …
+
+    # Регистрируем глобальный обработчик ошибок
+    app.add_error_handler(error_handler)
+
+    # Jobs
+    app.job_queue.run_repeating(auto_sync, interval=5, first=0)
+    hh, mm = REMIND_HH_MM
+    app.job_queue.run_daily(reminder, time=dt.time(hour=hh, minute=mm))
+
+    logging.info("🚀 Bot up")
     app.run_polling()
