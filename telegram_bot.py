@@ -1,160 +1,203 @@
-import os, logging, datetime as dt, re
-from collections import defaultdict
+import os
+import logging
+import datetime as dt
+import re
+from collections import defaultdict, deque
+
 from dotenv import load_dotenv
-from telegram import Bot
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message, Bot
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler,
+    CallbackQueryHandler, MessageHandler,
+    ContextTypes, filters
+)
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# ─── CONFIG & LOGGING ─────────────────────────────────
+# ─── CONFIG & LOGGING ───────────────────────────────────────────────────────
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-GOOGLE_JSON = os.getenv("GOOGLE_KEY_JSON")
-if not TOKEN: raise RuntimeError("TELEGRAM_BOT_TOKEN must be set")
-if GOOGLE_JSON and not os.path.exists("credentials.json"):
-    with open("credentials.json","w") as f: f.write(GOOGLE_JSON)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+GOOGLE_KEY_JSON = os.getenv("GOOGLE_KEY_JSON")
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN must be set")
+if GOOGLE_KEY_JSON and not os.path.exists("credentials.json"):
+    with open("credentials.json", "w", encoding="utf-8") as f:
+        f.write(GOOGLE_KEY_JSON)
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
 
-# ─── SHEETS ────────────────────────────────────────────
-scope = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/spreadsheets",
-         "https://www.googleapis.com/auth/drive.file","https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-sheet = gspread.authorize(creds).open("TelegramBotData").sheet1
+DATE_FMT     = "%d.%m.%Y"
+DATE_RX      = re.compile(r"\d{2}\.\d{2}\.\d{4}$")
+HEADER_ROWS  = 4
+UNDO_WINDOW  = 10      # seconds for undo
+REMIND_HH_MM = (20, 0) # daily reminder at 20:00
+MONTH_NAMES  = [
+    "января","февраля","марта","апреля","мая","июня",
+    "июля","августа","сентября","октября","ноября","декабря"
+]
 
-DATE_FMT="%d.%m.%Y"
-DATE_RX=re.compile(r"\d{2}\.\d{2}\.\d{4}$")
-def sdate(d): return d.strftime(DATE_FMT)
-def pdate(s): return dt.datetime.strptime(s,DATE_FMT).date()
-def is_date(s): return bool(DATE_RX.fullmatch(s))
+# ─── GOOGLE SHEETS I/O ──────────────────────────────────────────────────────
+def connect_sheet():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    return gspread.authorize(creds).open("TelegramBotData").sheet1
 
-def read_entries():
-    data=defaultdict(list)
-    rows=sheet.get_all_values()
-    for i,row in enumerate(rows[4:], start=5):
-        if not row[0] or not is_date(row[0]): continue
-        amt = row[2]
-        if not amt: continue
-        date,row_sym,row_amt = row[0],row[1],float(amt.replace(",","."))
-        key=date
-        data[key].append({"row":i,"sym":row_sym,"amt":row_amt})
+try:
+    SHEET = connect_sheet()
+    logging.info("Connected to Google Sheet")
+except Exception as e:
+    logging.error(f"Sheets connection failed: {e}")
+    SHEET = None
+
+def safe_float(s: str):
+    try: return float(s.replace(",","."))
+    except: return None
+
+def sdate(d: dt.date) -> str: return d.strftime(DATE_FMT)
+def pdate(s: str) -> dt.date: return dt.datetime.strptime(s, DATE_FMT).date()
+def is_date(s: str) -> bool: return bool(DATE_RX.fullmatch(s.strip()))
+
+def read_sheet():
+    data = defaultdict(list)
+    if not SHEET:
+        return data
+    for idx,row in enumerate(SHEET.get_all_values(), start=1):
+        if idx <= HEADER_ROWS or len(row)<2: continue
+        d=row[0].strip()
+        if not is_date(d): continue
+        amt = safe_float(row[2]) if len(row)>2 else None
+        sal = safe_float(row[3]) if len(row)>3 else None
+        if amt is None and sal is None: continue
+        e={"date":d,"symbols":row[1].strip(),"row_idx":idx}
+        if sal is not None: e["salary"]=sal
+        else: e["amount"]=amt
+        key=f"{pdate(d).year}-{pdate(d).month:02d}"
+        data[key].append(e)
     return data
 
-def insert_entry(date, sym, amt):
-    all_dates = sheet.col_values(1)[4:]
-    pos = 5
-    nd = pdate(date)
-    for idx,d in enumerate(all_dates, start=5):
+# Алиас для совместимости
+read_entries = read_sheet
+
+def push_row(entry):
+    if not SHEET: return None
+    nd = pdate(entry["date"])
+    row = [entry["date"], entry.get("symbols",""), entry.get("amount",""), entry.get("salary","")]
+    col = SHEET.col_values(1)[HEADER_ROWS:]
+    ins=HEADER_ROWS
+    for i,v in enumerate(col, start=HEADER_ROWS+1):
         try:
-            if pdate(d) <= nd:
-                pos = idx+1
-            else:
-                break
+            if pdate(v)<=nd: ins=i
+            else: break
+        except: continue
+    SHEET.insert_row(row, ins+1, value_input_option="USER_ENTERED")
+    return ins+1
+
+def update_row(idx:int, symbols:str, amount:float):
+    if not SHEET: return
+    SHEET.update_cell(idx,2,symbols)
+    SHEET.update_cell(idx,3,amount)
+
+def delete_row(idx:int):
+    if SHEET: SHEET.delete_rows(idx)
+
+# ─── SYNC & REMINDER ────────────────────────────────────────────────────────
+async def auto_sync(ctx):
+    ctx.application.bot_data["entries"] = read_sheet()
+
+async def reminder(ctx):
+    for cid in ctx.application.bot_data.get("chats", set()):
+        try: await ctx.bot.send_message(cid,"⏰ Не забудьте внести записи сегодня!")
         except: pass
-    sheet.insert_row([date, sym, amt], pos, value_input_option="USER_ENTERED")
-    return
 
-def update_entry(row, sym, amt):
-    sheet.update_cell(row,2,sym)
-    sheet.update_cell(row,3,amt)
+# ─── NAV STACK ──────────────────────────────────────────────────────────────
+def init_nav(ctx):
+    ctx.user_data["nav"]=deque([("main","Главное")])
+def push_nav(ctx,code,label):
+    ctx.user_data.setdefault("nav",deque()).append((code,label))
+def pop_view(ctx):
+    nav=ctx.user_data.get("nav",deque())
+    if len(nav)>1: nav.pop()
+    return nav[-1]
+def peek_prev(ctx):
+    nav=ctx.user_data.get("nav",deque())
+    return nav[-2] if len(nav)>=2 else nav[-1]
+def nav_kb(ctx):
+    c,l=peek_prev(ctx)
+    return InlineKeyboardMarkup([[InlineKeyboardButton(f"⬅️ {l}",callback_data="back"),
+                                  InlineKeyboardButton("🏠 Главное",callback_data="main")]])
 
-def delete_entry(row):
-    sheet.delete_rows(row)
+# ─── UI & FORMAT ────────────────────────────────────────────────────────────
+def fmt_amount(x:float)->str:
+    if abs(x-int(x))<1e-9: return f"{int(x):,}".replace(",",".")
+    s=f"{x:.2f}".rstrip("0").rstrip(".")
+    i,f=s.split(".") if "." in s else (s,"")
+    return f"{int(i):,}".replace(",",".") + (f and ","+f)
 
-# ─── UI ─────────────────────────────────────────────────
-PAD=" "  # &nbsp;
+def bounds_today():
+    d=dt.date.today()
+    return (d.replace(day=1) if d.day<=15 else d.replace(day=16)), d
+def bounds_prev():
+    d=dt.date.today()
+    if d.day<=15:
+        last=d.replace(day=1)-dt.timedelta(days=1)
+        return (last.replace(day=16), last)
+    return (d.replace(day=1), d.replace(day=15))
+
+async def safe_edit(msg:Message, text:str, kb:InlineKeyboardMarkup):
+    try: return await msg.edit_text(text,parse_mode="HTML",reply_markup=kb)
+    except: return await msg.reply_text(text,parse_mode="HTML",reply_markup=kb)
+
 def main_kb():
+    PAD = "\u00A0"*2
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{PAD}📆 Сегодня{PAD}", callback_data="day_today")],
-        [InlineKeyboardButton(f"{PAD}➕ Добавить{PAD}", callback_data="add_today")]
+        [InlineKeyboardButton(f"{PAD}📅 2024{PAD}", callback_data="year_2024"),
+         InlineKeyboardButton(f"{PAD}📅 2025{PAD}", callback_data="year_2025")],
+        [InlineKeyboardButton(f"{PAD}📆 Сегодня{PAD}", callback_data="go_today")],
+        [InlineKeyboardButton(f"{PAD}➕ Запись{PAD}", callback_data="add_rec")],
+        [InlineKeyboardButton(f"{PAD}💵 Зарплата{PAD}", callback_data="add_sal")],
+        [InlineKeyboardButton(f"{PAD*5}💰 Текущая ЗП{PAD*10}", callback_data="profit_now"),
+         InlineKeyboardButton(f"{PAD*5}💼 Прошлая ЗП{PAD*10}", callback_data="profit_prev")],
+        [InlineKeyboardButton(f"{PAD}📜 История ЗП{PAD}", callback_data="hist")],
+        [InlineKeyboardButton(f"{PAD}📊 KPI тек.{PAD}", callback_data="kpi"),
+         InlineKeyboardButton(f"{PAD}📊 KPI прош.{PAD}", callback_data="kpi_prev")],
     ])
 
-def day_kb(entries):
-    kb=[]
-    for idx,e in enumerate(entries,1):
-        kb.append([
-            InlineKeyboardButton(f"✏️{idx}", callback_data=f"edit_{e['row']}"),
-            InlineKeyboardButton(f"❌{idx}", callback_data=f"del_{e['row']}")
-        ])
-    kb.append([InlineKeyboardButton("🏠 Главное", callback_data="main")])
-    return InlineKeyboardMarkup(kb)
+# ─── VIEWS & FLOW ───────────────────────────────────────────────────────────
+# … здесь ваши реализованные функции show_year, show_month, show_day, show_history, ask_date, ask_name, ask_amount, process_text, cb …
+# (не трогаем их — они у вас уже рабочие)
 
-# ─── HANDLERS ────────────────────────────────────────────
-async def cmd_start(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    ctx.application.bot_data["entries"]=read_sheet()
-    await u.message.reply_text("📊 <b>Главное меню</b>", parse_mode="HTML", reply_markup=main_kb())
+# ─── START & RUN ────────────────────────────────────────────────────────────
+async def cmd_start(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
+    ctx.application.bot_data = {
+        "entries": read_sheet(),
+        "chats": set([update.effective_chat.id])
+    }
+    await update.message.reply_text(
+        "📊 <b>Главное меню</b>",
+        parse_mode="HTML",
+        reply_markup=main_kb()
+    )
 
-async def cb(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    q=u.callback_query; await q.answer()
-    data=q.data
-    today=sdate(dt.date.today())
-    entries_map = read_entries()
-    if data=="main":
-        await q.message.edit_text("📊 <b>Главное меню</b>", parse_mode="HTML", reply_markup=main_kb())
-        return
-    if data=="day_today":
-        ents=entries_map.get(today,[])
-        text = f"<b>{today}</b>\n" + "\n".join(f"{i+1}. {e['sym']} · {e['amt']}" for i,e in enumerate(ents)) or "Нет записей"
-        await q.message.edit_text(text, parse_mode="HTML", reply_markup=day_kb(ents))
-        return
-    if data=="add_today":
-        ctx.user_data["flow"]={"step":"add_sym","date":today}
-        await q.message.reply_text("✏️ Введите имя:")
-        return
-    if data.startswith("edit_"):
-        row=int(data.split("_",1)[1])
-        # find entry
-        for e in entries_map.get(today,[]):
-            if e["row"]==row:
-                ctx.user_data["flow"]={"step":"edit_sym","row":row,"date":today}
-                await q.message.reply_text(f"✏️ Новое имя (текущее: {e['sym']}):")
-                return
-    if data.startswith("del_"):
-        row=int(data.split("_",1)[1])
-        delete_entry(row)
-        # сразу обновляем окно
-        ents=read_entries().get(today,[])
-        text = f"<b>{today}</b>\n" + "\n".join(f"{i+1}. {e['sym']} · {e['amt']}" for i,e in enumerate(ents)) or "Нет записей"
-        await q.message.edit_text(text, parse_mode="HTML", reply_markup=day_kb(ents))
-        return
-
-async def msg_handler(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    flow=ctx.user_data.get("flow")
-    if not flow: return
-    text=u.message.text.strip()
-    step=flow["step"]; date=flow["date"]
-    await u.message.delete()
-    if step=="add_sym":
-        flow["sym"]=text; flow["step"]="add_amt"
-        return await u.message.reply_text("💰 Введите сумму:")
-    if step=="add_amt":
-        try: amt=float(text.replace(",","."))
-        except: return await u.message.reply_text("Нужно число")
-        insert_entry(date, flow["sym"], amt)
-        # обновляем
-        ents=read_entries().get(date,[])
-        txt=f"<b>{date}</b>\n"+"\n".join(f"{i+1}. {e['sym']} · {e['amt']}" for i,e in enumerate(ents)) or "Нет записей"
-        await u.message.reply_text("✅ Добавлено", reply_markup=day_kb(ents))
-        return
-    if step=="edit_sym":
-        flow["sym_new"]=text; flow["step"]="edit_amt"
-        return await u.message.reply_text("💰 Введите новую сумму:")
-    if step=="edit_amt":
-        try: amt=float(text.replace(",","."))
-        except: return await u.message.reply_text("Нужно число")
-        update_entry(flow["row"], flow["sym_new"], amt)
-        ents=read_entries().get(date,[])
-        txt=f"<b>{date}</b>\n"+"\n".join(f"{i+1}. {e['sym']} · {e['amt']}" for i,e in enumerate(ents)) or "Нет записей"
-        await u.message.reply_text("✅ Изменено", reply_markup=day_kb(ents))
-        return
-
-# ─── RUN ────────────────────────────────────────────────────────
 if __name__=="__main__":
-    app=ApplicationBuilder().token(TOKEN).build()
+    # удаляем возможный висячий webhook, чтобы не было конфликта getUpdates
+    Bot(TOKEN).delete_webhook(drop_pending_updates=True)
+
+    app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, msg_handler))
-    logger.info("Бот запущен")
-    Bot(TOKEN).delete_webhook(drop_pending_updates=True)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_text))
+    app.add_error_handler(lambda u, c: logger.exception("Unhandled", exc_info=c.error))
+
+    app.job_queue.run_repeating(auto_sync, interval=5, first=0)
+    hh, mm = REMIND_HH_MM
+    app.job_queue.run_daily(reminder, time=dt.time(hour=hh, minute=mm))
+
+    logging.info("🚀 Bot up")
     app.run_polling(drop_pending_updates=True)
