@@ -1,6 +1,7 @@
 import os, logging, datetime as dt, re
 from collections import defaultdict
 from dotenv import load_dotenv
+from telegram import Bot
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 import gspread
@@ -155,4 +156,5 @@ if __name__=="__main__":
     app.add_handler(CallbackQueryHandler(cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, msg_handler))
     logger.info("Бот запущен")
+    Bot(TOKEN).delete_webhook(drop_pending_updates=True)
     app.run_polling(drop_pending_updates=True)
