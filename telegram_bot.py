@@ -82,7 +82,7 @@ def day_kb(entries):
 
 # ─── HANDLERS ────────────────────────────────────────────
 async def cmd_start(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    ctx.application.bot_data["entries"]=read_entries()
+    ctx.application.bot_data["entries"]=read_sheet()
     await u.message.reply_text("📊 <b>Главное меню</b>", parse_mode="HTML", reply_markup=main_kb())
 
 async def cb(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
