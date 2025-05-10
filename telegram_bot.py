@@ -1,5 +1,3 @@
-# telegram_bot.py
-
 import os
 import logging
 import datetime as dt
@@ -9,8 +7,9 @@ from collections import defaultdict, deque
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
-    MessageHandler, ContextTypes, filters
+    ApplicationBuilder, CommandHandler,
+    CallbackQueryHandler, MessageHandler,
+    ContextTypes, filters
 )
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -38,8 +37,6 @@ MONTH_NAMES  = [
     "января","февраля","марта","апреля","мая","июня",
     "июля","августа","сентября","октября","ноября","декабря"
 ]
-# отступ для всех кнопок
-PAD = "\u00A0"*2
 
 # ─── GOOGLE SHEETS I/O ──────────────────────────────────────────────────────
 def connect_sheet():
@@ -54,9 +51,9 @@ def connect_sheet():
 
 try:
     SHEET = connect_sheet()
-    logger.info("Connected to Google Sheet")
+    logging.info("Connected to Google Sheet")
 except Exception as e:
-    logger.error(f"Sheets connection failed: {e}")
+    logging.error(f"Sheets connection failed: {e}")
     SHEET = None
 
 def safe_float(s: str):
@@ -69,7 +66,8 @@ def is_date(s: str) -> bool: return bool(DATE_RX.fullmatch(s.strip()))
 
 def read_sheet():
     data = defaultdict(list)
-    if not SHEET: return data
+    if not SHEET:
+        return data
     for idx,row in enumerate(SHEET.get_all_values(), start=1):
         if idx <= HEADER_ROWS or len(row)<2: continue
         d=row[0].strip()
@@ -89,7 +87,7 @@ def push_row(entry):
     nd = pdate(entry["date"])
     row = [entry["date"], entry.get("symbols",""), entry.get("amount",""), entry.get("salary","")]
     col = SHEET.col_values(1)[HEADER_ROWS:]
-    ins = HEADER_ROWS
+    ins=HEADER_ROWS
     for i,v in enumerate(col, start=HEADER_ROWS+1):
         try:
             if pdate(v)<=nd: ins=i
@@ -117,32 +115,24 @@ async def reminder(ctx):
 
 # ─── NAV STACK ──────────────────────────────────────────────────────────────
 def init_nav(ctx):
-    ctx.user_data["nav"] = deque([("main","Главная")])
-
+    ctx.user_data["nav"]=deque([("main","Главное")])
 def push_nav(ctx,code,label):
     ctx.user_data.setdefault("nav",deque()).append((code,label))
-
 def pop_view(ctx):
-    nav = ctx.user_data.get("nav",deque())
+    nav=ctx.user_data.get("nav",deque())
     if len(nav)>1: nav.pop()
     return nav[-1]
-
 def peek_prev(ctx):
-    nav = ctx.user_data.get("nav",deque())
+    nav=ctx.user_data.get("nav",deque())
     return nav[-2] if len(nav)>=2 else nav[-1]
-
-def nav_kb(ctx, hide_back=False):
-    buttons = []
-    if not hide_back:
-        prev_code, prev_label = peek_prev(ctx)
-        buttons.append(InlineKeyboardButton(f"⬅️ {prev_label}", callback_data="back"))
-    buttons.append(InlineKeyboardButton("🏠 Главное", callback_data="main"))
-    return InlineKeyboardMarkup([buttons])
+def nav_kb(ctx):
+    c,l=peek_prev(ctx)
+    return InlineKeyboardMarkup([[InlineKeyboardButton(f"⬅️ {l}",callback_data="back"),
+                                  InlineKeyboardButton("🏠 Главное",callback_data="main")]])
 
 # ─── UI & FORMAT ────────────────────────────────────────────────────────────
 def fmt_amount(x:float)->str:
-    if abs(x-int(x))<1e-9:
-        return f"{int(x):,}".replace(",",".")
+    if abs(x-int(x))<1e-9: return f"{int(x):,}".replace(",",".")
     s=f"{x:.2f}".rstrip("0").rstrip(".")
     i,f=s.split(".") if "." in s else (s,"")
     return f"{int(i):,}".replace(",",".") + (f and ","+f)
@@ -150,27 +140,31 @@ def fmt_amount(x:float)->str:
 def bounds_today():
     d=dt.date.today()
     return (d.replace(day=1) if d.day<=15 else d.replace(day=16)), d
-
 def bounds_prev():
     d=dt.date.today()
     if d.day<=15:
-        last = d.replace(day=1) - dt.timedelta(days=1)
+        last=d.replace(day=1)-dt.timedelta(days=1)
         return (last.replace(day=16), last)
     return (d.replace(day=1), d.replace(day=15))
 
-# клавиатура главного меню
+async def safe_edit(msg:Message, text:str, kb:InlineKeyboardMarkup):
+    try: return await msg.edit_text(text,parse_mode="HTML",reply_markup=kb)
+    except: return await msg.reply_text(text,parse_mode="HTML",reply_markup=kb)
+
+# ─── MAIN MENU ──────────────────────────────────────────────────────────────
 def main_kb():
+    PAD = "\u00A0"*2
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{PAD}📅 2024{PAD}", "year_2024"),
-         InlineKeyboardButton(f"{PAD}📅 2025{PAD}", "year_2025")],
-        [InlineKeyboardButton(f"{PAD}📆 Сегодня{PAD}", "go_today")],
-        [InlineKeyboardButton(f"{PAD}➕ Запись{PAD}", "add_rec")],
-        [InlineKeyboardButton(f"{PAD}💵 Зарплата{PAD}", "add_sal")],
-        [InlineKeyboardButton(f"{PAD*5}💰 Текущая ЗП{PAD*10}", "profit_now"),
-         InlineKeyboardButton(f"{PAD*5}💼 Прошлая ЗП{PAD*10}", "profit_prev")],
-        [InlineKeyboardButton(f"{PAD}📜 История ЗП{PAD}", "hist")],
-        [InlineKeyboardButton(f"{PAD}📊 KPI тек.{PAD}", "kpi"),
-         InlineKeyboardButton(f"{PAD}📊 KPI прош.{PAD}", "kpi_prev")],
+        [InlineKeyboardButton(f"{PAD}📅 2024{PAD}", callback_data="year_2024"),
+         InlineKeyboardButton(f"{PAD}📅 2025{PAD}", callback_data="year_2025")],
+        [InlineKeyboardButton(f"{PAD}📆 Сегодня{PAD}", callback_data="go_today")],
+        [InlineKeyboardButton(f"{PAD}➕ Запись{PAD}", callback_data="add_rec")],
+        [InlineKeyboardButton(f"{PAD}💵 Зарплата{PAD}", callback_data="add_sal")],
+        [InlineKeyboardButton(f"{PAD*5}💰 Текущая ЗП{PAD*10}", callback_data="profit_now"),
+         InlineKeyboardButton(f"{PAD*5}💼 Прошлая ЗП{PAD*10}", callback_data="profit_prev")],
+        [InlineKeyboardButton(f"{PAD}📜 История ЗП{PAD}", callback_data="hist")],
+        [InlineKeyboardButton(f"{PAD}📊 KPI тек.{PAD}", callback_data="kpi"),
+         InlineKeyboardButton(f"{PAD}📊 KPI прош.{PAD}", callback_data="kpi_prev")],
     ])
 
 # ─── VIEW FUNCTIONS ─────────────────────────────────────────────────────────
@@ -492,16 +486,13 @@ async def cmd_start(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("<b>📊 Главное меню</b>", parse_mode="HTML", reply_markup=main_kb())
     ctx.application.bot_data["chats"].add(update.effective_chat.id)
 
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+if __name__=="__main__":
+    app=ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_text))
     app.job_queue.run_repeating(auto_sync, interval=5, first=0)
-    hh, mm = REMIND_HH_MM
+    hh,mm=REMIND_HH_MM
     app.job_queue.run_daily(reminder, time=dt.time(hour=hh, minute=mm))
-    logger.info("🚀 Bot up")
+    logging.info("🚀 Bot up")
     app.run_polling(drop_pending_updates=True)
-
-if __name__=="__main__":
-    main()
