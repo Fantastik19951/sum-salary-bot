@@ -164,8 +164,8 @@ def main_kb():
         [InlineKeyboardButton("➕ Запись", callback_data="add_rec")],
         [InlineKeyboardButton("💵 Зарплата", callback_data="add_sal")],
         [
-            InlineKeyboardButton(f"{pad*5}💰 Текущая ЗП{pad*10}", callback_data="profit_now"),
-            InlineKeyboardButton(f"{pad*5}💼 Прошлая ЗП{pad*10}", callback_data="profit_prev")
+            InlineKeyboardButton(pad*5 + "💰 Текущая ЗП" + pad*10, callback_data="profit_now"),
+            InlineKeyboardButton(pad*5 + "💼 Прошлая ЗП" + pad*10, callback_data="profit_prev")
         ],
         [InlineKeyboardButton("📜 История ЗП", callback_data="hist")],
         [InlineKeyboardButton("📊 KPI тек.", callback_data="kpi"),
@@ -213,6 +213,7 @@ async def show_month(msg,ctx,code,flag=None,push=True):
     await safe_edit(msg, "\n".join([hdr,body,"",ftr]), InlineKeyboardMarkup(rows))
 
 async def show_day(msg,ctx,code,date,push=True):
+    # в «сегодня» и в любом дне — без кнопки «Назад»
     if push: push_nav(ctx,f"day_{code}_{date}",date)
     ctx.application.bot_data["entries"]=read_sheet()
     ents=[e for e in ctx.application.bot_data["entries"].get(code,[]) if e["date"]==date and "amount" in e]
@@ -227,11 +228,11 @@ async def show_day(msg,ctx,code,date,push=True):
             InlineKeyboardButton(f"✏️{i+1}",callback_data=f"edit_{e['row_idx']}_{code}_{date}")
         ])
     rows.append([InlineKeyboardButton("➕ Добавить",callback_data=f"add_{code}_{date}")])
-    rows.extend(nav_kb(ctx).inline_keyboard)
-    await safe_edit(msg, "\n".join([hdr,body,"",ftr]), InlineKeyboardMarkup(rows))
+    # для дня — только «Главное»
+    await safe_edit(msg, "\n".join([hdr,body,"",ftr]),
+                    InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное", callback_data="main")]]))
 
 async def show_history(msg,ctx,push=True):
-    # без «Назад»
     if push: push_nav(ctx,"hist","История ЗП")
     ents=[e for v in ctx.application.bot_data["entries"].values() for e in v if "salary" in e]
     if not ents:
@@ -242,25 +243,18 @@ async def show_history(msg,ctx,push=True):
             for e in sorted(ents, key=lambda x:pdate(x['date']))
         ]
         text="<b>📜 История ЗП</b>\n" + "\n".join(lines)
-    await safe_edit(msg, text, InlineKeyboardMarkup([[
-        InlineKeyboardButton("🏠 Главное", callback_data="main")
-    ]]))
+    await safe_edit(msg, text, InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное", callback_data="main")]]))
 
 async def show_profit(msg,ctx,start,end,title,push=True):
-    # без «Назад»
     if push: push_nav(ctx,title,title)
     ents=[e for v in ctx.application.bot_data["entries"].values() for e in v
           if start<=pdate(e['date'])<=end and "amount" in e]
     tot=sum(e["amount"] for e in ents)
     text=f"{title} ({sdate(start)} – {sdate(end)})\n<b>10%: {fmt_amount(tot*0.10)} $</b>"
-    await safe_edit(msg, text, InlineKeyboardMarkup([[
-        InlineKeyboardButton("🏠 Главное", callback_data="main")
-    ]]))
+    await safe_edit(msg, text, InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное", callback_data="main")]]))
 
-# ─── KPI with forecast ──────────────────────────────────────────────────────
+# ─── KPI with capped forecast ─────────────────────────────────────────────────
 def calc_kpi(entries, flag):
-    # entries — список за половину; flag=True → 1–15, False → 16–конец
-    # длина периода
     if not entries:
         return 0,0,0,0,0,0
     d0 = pdate(entries[0]['date'])
@@ -275,32 +269,29 @@ def calc_kpi(entries, flag):
     days = len({e['date'] for e in entries})
     avg  = sal / days if days else 0
     fc   = round(avg * period_len,2)
+    # не прогноз больше факта
+    fc   = min(fc, sal)
     return turn, sal, days, period_len, avg, fc
 
 async def show_kpi(msg, ctx, prev=False, push=True):
     # prev=False → текущий, prev=True → прошлый
+    # определяем period
+    today = dt.date.today()
     if prev:
-        start,end = bounds_prev(); title="📊 KPI предыдущего"
-        # For past we treat completed half: always flag=True for the half that ended
-        # detect which half: if today.day<=15 → previous month second half else current first half
-        today = dt.date.today()
-        if today.day<=15:
-            # previous month second half
-            pe = today.replace(day=1) - dt.timedelta(days=1)
-            code = f"{pe.year}-{pe.month:02d}"
-            flag = False
-        else:
-            code = today.strftime("%Y-%m")
-            flag = True
+        start,end = bounds_prev()
+        title="📊 KPI предыдущего"
+        # определяем флаг по логике завершённого периода
+        flag = False if today.day<=15 else True
+        code = (start if today.day<=15 else today).strftime("%Y-%m")
     else:
-        start,end = bounds_today(); title="📊 KPI текущего"
-        today = dt.date.today()
+        start,end = bounds_today()
+        title="📊 KPI текущего"
+        flag = today.day<=15
         code = today.strftime("%Y-%m")
-        flag = (today.day<=15)
 
-    if push: push_nav(ctx,title,title)
+    if push: push_nav(ctx, title, title)
     entries = [
-        e for e in ctx.application.bot_data["entries"].get(code,[])
+        e for e in ctx.application.bot_data["entries"].get(code, [])
         if "amount" in e and ((pdate(e['date']).day<=15)==flag)
     ]
     if not entries:
@@ -314,12 +305,10 @@ async def show_kpi(msg, ctx, prev=False, push=True):
         f"• Оборот: {turn}\n"
         f"• ЗП10%: {sal}\n"
         f"• Дней: {days}/{period_len}\n"
-        f"• Среднее/день: {round(avg,2)}\n"
-        f"• Прогноз всего: {fc}"
+        f"• Ср/день: {round(avg,2)}\n"
+        f"• Прогноз: {fc}"
     )
-    await safe_edit(msg, text, InlineKeyboardMarkup([[
-        InlineKeyboardButton("🏠 Главное", callback_data="main")
-    ]]))
+    await safe_edit(msg, text, InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное", callback_data="main")]]))
 
 # ─── ADD/EDIT FLOW ──────────────────────────────────────────────────────────
 async def ask_date(msg,ctx):
@@ -369,13 +358,13 @@ async def process_text(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
     if flow["step"]=="val":
         try: val = float(txt.replace(",","."))
         except: return await flow["msg"].reply_text("Нужно число")
-        date = flow["date"]; code=date[:7].replace(".","-")
-        # EDIT
+        date = flow["date"]
+        code = date[:7].replace(".","-")
+
         if flow.get("mode")=="edit":
             idx = flow["row"]
             update_row(idx, flow["symbols"], val)
             ctx.application.bot_data["entries"] = read_sheet()
-            # notify with undo
             nt = await flow["msg"].reply_text(
                 "✅ Изменено",
                 reply_markup=InlineKeyboardMarkup([[
@@ -413,7 +402,7 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
     await q.answer()
     d,msg = q.data, q.message
 
-    # EDIT
+    # --- EDIT flow ---
     if d.startswith("edit_"):
         _,r,code,day = d.split("_",3)
         idx = int(r)
@@ -425,21 +414,20 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
         }
         return await ask_name(msg,ctx)
 
-    # UNDO EDIT
+    # Undo edit
     if d.startswith("undo_edit_"):
-        idx=int(d.split("_",1)[1])
-        # We do not restore if time passed
-        # For simplicity just refresh day
-        return await show_day(msg,ctx, *msg.text.split()[1].split("-"))
+        idx = int(d.split("_",1)[1])
+        # просто обновляем день
+        return await show_day(msg,ctx, *(msg.text.split()[0].split("-")[:2] + [msg.text.split()[0]]) )
 
-    # UNDO ADD
+    # Undo add
     if d.startswith("undo_"):
-        idx=int(d.split("_",1)[1])
+        idx = int(d.split("_",1)[1])
         delete_row(idx)
         ctx.application.bot_data["entries"] = read_sheet()
         return await show_main(msg,ctx)
 
-    # BACK (strict chain)
+    # BACK strict chain
     if d=="back":
         code,label = pop_view(ctx)
         if code.startswith("day_"):
@@ -455,12 +443,12 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
     if d=="main":
         return await show_main(msg,ctx,push=False)
 
-    # TODAY
+    # TODAY (no BACK)
     if d=="go_today":
-        td = dt.date.today(); ds=sdate(td); cd=f"{td.year}-{td.month:02d}"
+        td=dt.date.today(); ds=sdate(td); cd=f"{td.year}-{td.month:02d}"
         return await show_day(msg,ctx,cd,ds)
 
-    # NAVIGATION: year/month/day
+    # Year/Mon/Day navigation
     if d.startswith("year_"):
         return await show_year(msg,ctx,d.split("_",1)[1])
     if d.startswith("mon_"):
@@ -477,13 +465,13 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
         return await ask_date(msg,ctx)
     if d.startswith("add_"):
         _,code,day = d.split("_",2)
-        ctx.user_data["flow"]={"mode":"add","date":day,"row":None,"msg":msg}
+        ctx.user_data["flow"]={"mode":"add","date":day,"msg":msg}
         return await ask_name(msg,ctx)
     if d=="add_sal":
-        ctx.user_data["flow"]={"mode":"salary","date":sdate(dt.date.today()),"row":None,"msg":msg}
+        ctx.user_data["flow"]={"mode":"salary","date":sdate(dt.date.today()),"msg":msg}
         return await ask_amount(msg,ctx)
 
-    # DELETE
+    # DELETE row
     if d.startswith("drow_"):
         _,r,c,dd = d.split("_",4)[:4]
         delete_row(int(r))
@@ -492,10 +480,10 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
 
     # PROFIT
     if d=="profit_now":
-        s,e=bounds_today()
+        s,e = bounds_today()
         return await show_profit(msg,ctx,s,e,"💰 Текущая ЗП")
     if d=="profit_prev":
-        s,e=bounds_prev()
+        s,e = bounds_prev()
         return await show_profit(msg,ctx,s,e,"💼 Прошлая ЗП")
 
     # HISTORY
@@ -521,11 +509,8 @@ if __name__=="__main__":
     app.add_handler(CommandHandler("start",cmd_start))
     app.add_handler(CallbackQueryHandler(cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_text))
-    app.add_error_handler(lambda u,c: logger.error(u, exc_info=c.error))
-
     app.job_queue.run_repeating(auto_sync,interval=5,first=0)
     hh,mm=REMIND_HH_MM
     app.job_queue.run_daily(reminder,time=dt.time(hour=hh,minute=mm))
-
     logger.info("🚀 Bot up")
     app.run_polling(drop_pending_updates=True)
