@@ -383,7 +383,7 @@ async def process_text(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
            # вместо
         # period = flow.get("period", flow["date"][:7].replace(".","-"))
         # используем исключительно сохранённое:
-        period = flow["period"]
+        period = flow.get("period", flow["date"][:7].replace(".", "-"))
         date_str= flow["date"]
 
         if flow.get("mode")=="edit":
