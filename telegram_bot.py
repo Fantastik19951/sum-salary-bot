@@ -523,7 +523,7 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
         }
         return await ask_name(msg,ctx)
 
-     if d.startswith("undo_edit_"):
+    if d.startswith("undo_edit_"):
         # d == "undo_edit_<row>"
         parts = d.split("_")              # ["undo","edit","<row>"]
         idx = int(parts[2])               # берём третий элемент
