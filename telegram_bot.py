@@ -273,39 +273,52 @@ async def show_profit(msg,ctx,start,end,title,push=True):
     await safe_edit(msg, text, MAIN_ONLY_KB)
 
 async def show_kpi(msg, ctx, prev=False, push=True):
+    # вычисляем границы периода
     if prev:
         start, end = bounds_prev()
         title = "📊 KPI прошлого"
     else:
         start, end = bounds_today()
         title = "📊 KPI текущего"
+
     if push:
         push_nav(ctx, title, title)
 
-    # Берём только заполненные записи за период
-    ents = [e for v in ctx.application.bot_data["entries"].values()
-            for e in v
-            if start <= pdate(e["date"]) <= end and "amount" in e]
+    # все записи за период
+    ents = [
+        e for v in ctx.application.bot_data["entries"].values() for e in v
+        if start <= pdate(e["date"]) <= end and "amount" in e
+    ]
     if not ents:
-        return await safe_edit(msg, "Нет данных", InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное", callback_data="main")]]))
+        return await safe_edit(msg, "Нет данных", InlineKeyboardMarkup([ [InlineKeyboardButton("🏠 Главное", callback_data="main")] ]))
 
-    total_turnover = sum(e["amount"] for e in ents)
-    actual_salary = total_turnover * 0.10
+    # общий оборот и 10%
+    turn = sum(e["amount"] for e in ents)
+    sal  = turn * 0.10
 
-    days_filled = len({e["date"] for e in ents})
-    period_length = (end - start).days + 1
-    avg_per_filled = actual_salary / days_filled if days_filled else 0
-    # Прогноз на весь период: среднее на заполненные дни * полный период
-    forecast_salary = avg_per_filled * period_length
+    # количество дней с записями
+    days_filled = len({ e["date"] for e in ents })
+    # общее число дней в периоде
+    total_days = (end - start).days + 1
+
+    # среднее за заполненные дни
+    avg_per_day = sal / days_filled if days_filled else 0
+
+    if prev:
+        # прошлый период — прогноз = факт
+        forecast_sal = sal
+    else:
+        # текущий прогноз: среднее * total_days
+        forecast_sal = avg_per_day * total_days
 
     text = (
         f"{title} ({sdate(start)} – {sdate(end)})\n"
-        f"• ЗП за период: {fmt_amount(actual_salary)} $\n"
-        f"• Прогноз ЗП: {fmt_amount(forecast_salary)} $\n"
-        f"• Заполнено дней: {days_filled}/{period_length}\n"
-        f"• Ср/день: {fmt_amount(avg_per_filled)} $"
+        f"• Текущая ЗП: {fmt_amount(sal)} $\n"
+        f"• Прогноз ЗП: {fmt_amount(forecast_sal)} $\n"
+        f"• Ср/день: {fmt_amount(avg_per_day)} $"
     )
-    # Убираем кнопку «⬅️ назад» — оставляем только «Главная»
+
+    # у KPI убираем кнопку «назад», оставляем только «Главная»
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное", callback_data="main")]])
     await safe_edit(msg, text, kb)
     
@@ -336,6 +349,7 @@ async def ask_amount(msg,ctx):
         prompt = await msg.reply_text("💰 Введите сумму:")
     flow.update({"step":"val","prompt":prompt})
 
+# ─── ADD/EDIT FLOW ──────────────────────────────────────────────────────────
 async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     flow = ctx.user_data.get("flow")
     if not flow:
@@ -371,8 +385,9 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except:
             return await flow["msg"].reply_text("Нужно число")
 
-        # определяем period и date_str для обоих сценариев
-        period = flow.get("period", flow["date"][:7].replace(".", "-"))
+        # общие параметры
+        dt_obj = pdate(flow["date"])
+        period = f"{dt_obj.year}-{dt_obj.month:02d}"
         date_str = flow["date"]
 
         # ─── РЕДАКТИРОВАНИЕ ───────────────────────────────────────────────
@@ -380,15 +395,12 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             idx = flow["row"]
             update_row(idx, flow["symbols"], val)
             ctx.application.bot_data["entries"] = read_sheet()
-
-            # уведомление с кнопкой отмены
             resp = await flow["msg"].reply_text(
                 "✅ Изменено",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("↺ Отменить", callback_data=f"undo_edit_{idx}")
                 ]])
             )
-            # сохраняем старые значения для отмены
             ctx.user_data["undo_edit"] = {
                 "row": idx,
                 "old_symbols": flow["old_symbols"],
@@ -397,29 +409,32 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "date": date_str,
                 "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
             }
-            # автоскрытие уведомления
             ctx.application.job_queue.run_once(
                 lambda c: c.bot.delete_message(resp.chat.id, resp.message_id),
                 when=UNDO_WINDOW
             )
             ctx.user_data.pop("flow")
-            # перерисовываем тот же день
             return await show_day(flow["msg"], ctx, period, date_str)
 
         # ─── ДОБАВЛЕНИЕ ───────────────────────────────────────────────────
         flow["amount"] = val
-        row = push_row(flow)
+        row = push_row({
+            "date":    date_str,
+            "symbols": flow["symbols"],
+            "amount":  val
+        })
         ctx.application.bot_data["entries"] = read_sheet()
-
-        # уведомление с кнопкой отмены
         resp = await flow["msg"].reply_text(
             f"✅ Добавлено: {flow['symbols']} · {fmt_amount(val)} $",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("↺ Отменить", callback_data=f"undo_{row}")
             ]])
         )
+        # сохраняем данные для отмены
         ctx.user_data["undo"] = {
-            "row": row,
+            "row":     row,
+            "period":  period,
+            "date":    date_str,
             "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
         }
         ctx.application.job_queue.run_once(
@@ -427,7 +442,7 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             when=UNDO_WINDOW
         )
         ctx.user_data.pop("flow")
-        # **ВОТ ЭТА СТРОКА** обновит окно дня с добавленной записью:
+        # перерисовываем день с новой записью
         return await show_day(flow["msg"], ctx, period, date_str)
         
 # ─── CALLBACK HANDLER ───────────────────────────────────────────────────────
@@ -507,6 +522,35 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
             "msg":msg
         }
         return await ask_name(msg,ctx)
+
+    if d.startswith("undo_"):
+            idx = int(d.split("_", 1)[1])
+            ud = ctx.user_data.get("undo", {})
+            if ud.get("row") == idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
+                delete_row(idx)
+                ctx.application.bot_data["entries"] = read_sheet()
+                # возвращаем пользователя в тот же день
+                return await show_day(msg, ctx, ud["period"], ud["date"])
+            else:
+                return await msg.reply_text("⏱ Время вышло")
+
+         # ─── ОТМЕНА РЕДАКТИРОВАНИЯ ────────────────────────────────────────────────
+    if d.startswith("undo_edit_"):
+        idx = int(d.split("_", 1)[1])
+        ud = ctx.user_data.get("undo_edit", {})
+        # проверяем, что это та же запись и время ещё не истекло
+        if ud.get("row") == idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
+            # откатываем символы и сумму
+            update_row(idx, ud["old_symbols"], ud["old_amount"])
+            # синхронизируем кеш
+            ctx.application.bot_data["entries"] = read_sheet()
+            # показываем тот же день
+            await show_day(msg, ctx, ud["period"], ud["date"])
+            # чистим данные об undo
+            ctx.user_data.pop("undo_edit", None)
+        else:
+            await msg.reply_text("⏱ Время вышло")
+        return
 
     if d=="profit_now":
         s,e = bounds_today()
