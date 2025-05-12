@@ -523,31 +523,27 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
         }
         return await ask_name(msg,ctx)
 
-    if d.startswith("undo_"):
-            idx = int(d.split("_", 1)[1])
-            ud = ctx.user_data.get("undo", {})
-            if ud.get("row") == idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
-                delete_row(idx)
-                ctx.application.bot_data["entries"] = read_sheet()
-                # возвращаем пользователя в тот же день
-                return await show_day(msg, ctx, ud["period"], ud["date"])
-            else:
-                return await msg.reply_text("⏱ Время вышло")
-
-         # ─── ОТМЕНА РЕДАКТИРОВАНИЯ ────────────────────────────────────────────────
     if d.startswith("undo_edit_"):
-        idx = int(d.split("_", 1)[1])
+        idx = int(d.split("_", 2)[2])  # d = "undo_edit_<row>"
         ud = ctx.user_data.get("undo_edit", {})
-        # проверяем, что это та же запись и время ещё не истекло
         if ud.get("row") == idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
-            # откатываем символы и сумму
             update_row(idx, ud["old_symbols"], ud["old_amount"])
-            # синхронизируем кеш
             ctx.application.bot_data["entries"] = read_sheet()
-            # показываем тот же день
             await show_day(msg, ctx, ud["period"], ud["date"])
-            # чистим данные об undo
             ctx.user_data.pop("undo_edit", None)
+        else:
+            await msg.reply_text("⏱ Время вышло")
+        return
+
+    # ─── Отмена добавления ─────────────────────────────────────────────────
+    elif d.startswith("undo_"):
+        idx = int(d.split("_", 1)[1])  # d = "undo_<row>"
+        ud = ctx.user_data.get("undo", {})
+        if ud.get("row") == idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
+            delete_row(idx)
+            ctx.application.bot_data["entries"] = read_sheet()
+            await show_day(msg, ctx, ud["period"], ud["date"])
+            ctx.user_data.pop("undo", None)
         else:
             await msg.reply_text("⏱ Время вышло")
         return
