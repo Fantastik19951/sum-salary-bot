@@ -418,26 +418,25 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return await show_day(flow["msg"], ctx, period, date_str)
 
         # ─── ДОБАВЛЕНИЕ ───────────────────────────────────────────────────
-        flow["amount"] = val
-        row = push_row({
-            "date":    date_str,
-            "symbols": flow["symbols"],
-            "amount":  val
-        })
+        # …
+        row = push_row(flow)
         ctx.application.bot_data["entries"] = read_sheet()
+
         resp = await flow["msg"].reply_text(
             f"✅ Добавлено: {flow['symbols']} · {fmt_amount(val)} $",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("↺ Отменить", callback_data=f"undo_{row}")
             ]])
         )
-        # сохраняем данные для отмены
+        # сохраняем также msg, period, date
         ctx.user_data["undo"] = {
-            "row":     row,
-            "period":  period,
-            "date":    date_str,
+            "row": row,
+            "msg": flow["msg"],
+            "period": period,
+            "date": date_str,
             "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
         }
+# …
         ctx.application.job_queue.run_once(
             lambda c: c.bot.delete_message(resp.chat.id, resp.message_id),
             when=UNDO_WINDOW
@@ -542,20 +541,20 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
 
     # ─── Отмена добавления ─────────────────────────────────────────────────
     if d.startswith("undo_"):
-        idx = int(d.split("_",1)[1])
         ud = ctx.user_data.get("undo", {})
         now = dt.datetime.utcnow()
-        if ud.get("row") == idx and now <= ud.get("expires", now - dt.timedelta(seconds=1)):
-            # удаляем уведомление "✅ Добавлено…"
+        # проверяем, что row совпадает и не истёк таймаут
+        if ud and d == f"undo_{ud['row']}" and now <= ud["expires"]:
+            # удаляем уведомление “✅ Добавлено…”
             await msg.delete()
-            # удаляем саму запись из таблицы
-            delete_row(idx)
+            # удаляем саму строку из таблицы
+            delete_row(ud["row"])
             ctx.application.bot_data["entries"] = read_sheet()
-            # перерисовываем день в исходном сообщении
+            # перерисовываем содержимое дня в том же сообщении, где была таблица
             return await show_day(ud["msg"], ctx, ud["period"], ud["date"])
         else:
             return await msg.reply_text("⏱ Время вышло")
-
+            
     if d=="profit_now":
         s,e = bounds_today()
         return await show_profit(msg,ctx,s,e,"💰 Текущая ЗП")
