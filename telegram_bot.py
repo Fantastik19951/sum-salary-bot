@@ -576,6 +576,7 @@ async def error_handler(update, context):
     logging.error(f"Unhandled exception {update!r}", exc_info=context.error)
 
 async def cmd_start(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
+    await app.bot.set_my_commands([])
     ctx.application.bot_data = {"entries":read_sheet(),"chats":set()}
     await update.message.reply_text(
         "📊 <b>Главное меню</b>", parse_mode="HTML", reply_markup=main_kb()
