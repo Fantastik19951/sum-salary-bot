@@ -360,15 +360,15 @@ async def process_text(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
         return await ask_amount(flow["msg"], ctx)
 
     # ─── ОБРАБОТКА ВВОДА ЗНАЧЕНИЯ ─────────────────────────────────────────────────
-if flow["step"] == "val":
-    try:
-        val = float(txt.replace(",", "."))
-    except:
-        return await flow["msg"].reply_text("Нужно число")
+    if flow["step"] == "val":
+        try:
+            val = float(txt.replace(",", "."))
+        except:
+            return await flow["msg"].reply_text("Нужно число")
 
     # Период (код папки) — если редактируем, берем из flow, иначе из даты
-    period = flow.get("period", flow["date"][:7].replace(".", "-"))
-    date_str = flow["date"]
+        period = flow.get("period", flow["date"][:7].replace(".", "-"))
+        date_str = flow["date"]
 
     # ─── РЕДАКТИРОВАНИЕ ───────────────────────────────────────────────────────
     if flow.get("mode") == "edit":
