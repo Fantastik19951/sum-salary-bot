@@ -576,7 +576,7 @@ async def error_handler(update, context):
     logging.error(f"Unhandled exception {update!r}", exc_info=context.error)
 
 async def cmd_start(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    await app.bot.set_my_commands([])
+    await ctx.bot.set_my_commands([])
     ctx.application.bot_data = {"entries":read_sheet(),"chats":set()}
     await update.message.reply_text(
         "📊 <b>Главное меню</b>", parse_mode="HTML", reply_markup=main_kb()
@@ -585,6 +585,7 @@ async def cmd_start(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
 
 if __name__=="__main__":
     app = ApplicationBuilder().token(TOKEN).build()
+    await app.bot.set_my_commands([])
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_text))
