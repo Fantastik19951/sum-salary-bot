@@ -272,47 +272,60 @@ async def show_profit(msg,ctx,start,end,title,push=True):
     text = f"{title} ({sdate(start)}–{sdate(end)})\n<b>10%: {fmt_amount(tot*0.10)} $</b>"
     await safe_edit(msg, text, MAIN_ONLY_KB)
 
-async def show_kpi(msg, ctx, prev=False, push=True):
+async def show_kpi(msg: Message, ctx: ContextTypes.DEFAULT_TYPE, prev: bool=False, push: bool=True):
     if prev:
+        # прошлый KPI (закрытый период) оставляем как было
         start, end = bounds_prev()
         title = "📊 KPI прошлого"
-    else:
-        start, end = bounds_today()
-        title = "📊 KPI текущего"
-    if push:
-        push_nav(ctx, title, title)
+        # полагаем, что прогноз = факт, среднее/день = факт / дни
+        ents = [e for v in ctx.application.bot_data["entries"].values() for e in v
+                if start <= pdate(e["date"]) <= end and "amount" in e]
+        if not ents:
+            return await safe_edit(msg, "Нет данных", nav_kb(ctx))
+        turn = sum(e["amount"] for e in ents)
+        sal  = turn * 0.10
+        days = len({e["date"] for e in ents})
+        avg  = sal / days if days else 0
+        text = (
+            f"{title} ({sdate(start)} – {sdate(end)})\n"
+            f"• Факт ЗП10%: {fmt_amount(sal)} $\n"
+            f"• Ср/день: {fmt_amount(avg)} $"
+        )
+        # убираем кнопку «назад» для KPI
+        return await msg.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🏠 Главное", callback_data="main")
+        ]]))
 
+    # текущий KPI – прогноз на полный 15-дневный блок
+    start, today = bounds_today()
+    title = "📊 KPI текущего"
     ents = [e for v in ctx.application.bot_data["entries"].values() for e in v
-            if start <= pdate(e["date"]) <= end and "amount" in e]
+            if start <= pdate(e["date"]) <= today and "amount" in e]
     if not ents:
-        return await safe_edit(msg, "Нет данных", MAIN_ONLY_KB)
+        return await safe_edit(msg, "Нет данных", InlineKeyboardMarkup([[
+            InlineKeyboardButton("🏠 Главное", callback_data="main")
+        ]]))
 
     turn = sum(e["amount"] for e in ents)
     sal  = turn * 0.10
-    days_input = len({e["date"] for e in ents})
-    plen = (end - start).days + 1
-    avg_per_day = sal / days_input if days_input else 0
+    days_filled = len({e["date"] for e in ents})
+    # среднее по заполненным дням
+    avg_per_day = sal / days_filled if days_filled else 0
+    # всего дней в текущем блоке — всегда 15 (01–15 или 16–30/31)
+    total_block_days = 15
+    forecast = avg_per_day * total_block_days
 
-    if prev:
-        # прошлый период — только фактическая
-        body = (
-            f"{title} ({sdate(start)}–{sdate(end)})\n"
-            f"• ЗП за период: {fmt_amount(sal)} $\n"
-            f"• Дней: {days_input}/{plen}\n"
-            f"• Ср/день: {fmt_amount(avg_per_day)} $"
-        )
-    else:
-        # текущий период — фактическая + прогноз
-        forecast = avg_per_day * plen
-        body = (
-            f"{title} ({sdate(start)}–{sdate(end)})\n"
-            f"• ЗП за период: {fmt_amount(sal)} $\n"
-            f"• Прогноз на {plen} дн: {fmt_amount(forecast)} $\n"
-            f"• Дней: {days_input}/{plen}\n"
-            f"• Ср/день: {fmt_amount(avg_per_day)} $"
-        )
-
-    await safe_edit(msg, body, MAIN_ONLY_KB)
+    text = (
+        f"{title} ({sdate(start)} – {sdate(today)})\n"
+        f"• Прогноз ЗП10%: {fmt_amount(forecast)} $\n"
+        f"• Факт ЗП10%: {fmt_amount(sal)} $\n"
+        f"• Ср/день: {fmt_amount(avg_per_day)} $"
+    )
+    # убираем кнопку «назад» для KPI
+    return await msg.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[
+        InlineKeyboardButton("🏠 Главное", callback_data="main")
+    ]]))
+    
 # ─── ADD/EDIT FLOW ──────────────────────────────────────────────────────────
 async def ask_date(msg,ctx):
     prompt = await msg.reply_text(
@@ -403,6 +416,9 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
     if not q: return
     await q.answer()
     d,msg = q.data, q.message
+    
+     if d == "add_rec":
+        return await ask_date(msg, ctx)
 
     if d=="main":
         return await show_main(msg, ctx)
@@ -453,9 +469,6 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
         }
         return await ask_name(msg, ctx)
     
-    if d=="add_rec":
-        return await ask_date(msg,ctx)
-
     if d.startswith("drow_"):
         _,r,c,dd = d.split("_",4)[:4]
         delete_row(int(r))
