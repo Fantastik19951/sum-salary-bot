@@ -434,6 +434,7 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # сохраняем данные для отмены
         ctx.user_data["undo"] = {
             "row":     row,
+            "msg": flow["msg"],
             "period":  period,
             "date":    date_str,
             "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
@@ -541,17 +542,20 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
             return await q.message.reply_text("⏱ Время вышло")
 
     # ─── Отмена добавления ─────────────────────────────────────────────────
-    elif d.startswith("undo_"):
-        idx = int(d.split("_", 1)[1])  # d = "undo_<row>"
-        ud = ctx.user_data.get("undo", {})
-        if ud.get("row") == idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
-            delete_row(idx)
-            ctx.application.bot_data["entries"] = read_sheet()
-            await show_day(msg, ctx, ud["period"], ud["date"])
-            ctx.user_data.pop("undo", None)
-        else:
-            await safe_edit(msg, "⏱ Время вышло", nav_kb(ctx))
-        return
+     if d.startswith("undo_"):
+            idx = int(d.split("_",1)[1])
+            ud = ctx.user_data.get("undo", {})
+            now = dt.datetime.utcnow()
+            if ud.get("row") == idx and now <= ud.get("expires", now - dt.timedelta(seconds=1)):
+                # удаляем уведомление "✅ Добавлено…"
+                await msg.delete()
+                # удаляем саму запись из таблицы
+                delete_row(idx)
+                ctx.application.bot_data["entries"] = read_sheet()
+                # перерисовываем день в исходном сообщении
+                return await show_day(ud["msg"], ctx, ud["period"], ud["date"])
+            else:
+                return await msg.reply_text("⏱ Время вышло")
 
     if d=="profit_now":
         s,e = bounds_today()
