@@ -526,14 +526,15 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
     if d.startswith("undo_edit_"):
         idx = int(d.split("_", 2)[2])  # d = "undo_edit_<row>"
         ud = ctx.user_data.get("undo_edit", {})
-        if ud.get("row") == idx and dt.datetime.utcnow() <= ud.get("expires", dt.datetime.min):
+        if ud.get("row")==idx and dt.datetime.utcnow()<=ud["expires"]:
             update_row(idx, ud["old_symbols"], ud["old_amount"])
             ctx.application.bot_data["entries"] = read_sheet()
-            await show_day(msg, ctx, ud["period"], ud["date"])
-            ctx.user_data.pop("undo_edit", None)
+            # перерисовываем день в том же сообщении
+            return await show_day(msg, ctx, ud["period"], ud["date"])
         else:
-            await msg.reply_text("⏱ Время вышло")
-        return
+        # редактируем то же сообщение, указывая, что время вышло
+            await safe_edit(msg, "⏱ Время вышло", nav_kb(ctx))
+            return
 
     # ─── Отмена добавления ─────────────────────────────────────────────────
     elif d.startswith("undo_"):
@@ -545,7 +546,7 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
             await show_day(msg, ctx, ud["period"], ud["date"])
             ctx.user_data.pop("undo", None)
         else:
-            await msg.reply_text("⏱ Время вышло")
+            await safe_edit(msg, "⏱ Время вышло", nav_kb(ctx))
         return
 
     if d=="profit_now":
