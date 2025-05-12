@@ -198,7 +198,9 @@ async def show_year(msg,ctx,year,push=True):
         for i in range(12)
     ]
     rows = [btns[i:i+4] for i in range(0,12,4)]
+    rows.extend(nav_kb(ctx).inline_keyboard)
     await safe_edit(msg, f"<b>📆 {year}</b>", InlineKeyboardMarkup(rows))
+    
 
 async def show_month(msg,ctx,code,flag=None,push=True):
     y,m = code.split("-")
@@ -224,6 +226,7 @@ async def show_month(msg,ctx,code,flag=None,push=True):
     )]]
     for d in days:
         rows.append([InlineKeyboardButton(d, callback_data=f"day_{code}_{d}")])
+        rows.extend(nav_kb(ctx).inline_keyboard)
     await safe_edit(msg, "\n".join([hdr,body,"",ftr]), InlineKeyboardMarkup(rows))
 
 async def show_day(msg,ctx,code,date,push=True):
@@ -245,6 +248,7 @@ async def show_day(msg,ctx,code,date,push=True):
             InlineKeyboardButton(f"✏️{i+1}", callback_data=f"edit_{e['row_idx']}_{code}_{date}")
         ])
     rows.append([ InlineKeyboardButton("➕ Запись", callback_data=f"add_{code}_{date}") ])
+    rows.extend(nav_kb(ctx).inline_keyboard)
     await safe_edit(msg, "\n".join([hdr,body,"",ftr]), InlineKeyboardMarkup(rows))
 
 async def show_history(msg,ctx,push=True):
