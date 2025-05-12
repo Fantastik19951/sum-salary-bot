@@ -6,6 +6,7 @@ from collections import defaultdict, deque
 
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message
+from telegram import __version__ as TG_VER
 from telegram.ext import (
     ApplicationBuilder, CommandHandler,
     CallbackQueryHandler, MessageHandler,
@@ -576,16 +577,23 @@ async def error_handler(update, context):
     logging.error(f"Unhandled exception {update!r}", exc_info=context.error)
 
 async def cmd_start(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
-    
-    await ctx.bot.set_my_commands([])
     ctx.application.bot_data = {"entries":read_sheet(),"chats":set()}
     await update.message.reply_text(
         "📊 <b>Главное меню</b>", parse_mode="HTML", reply_markup=main_kb()
     )
     ctx.application.bot_data["chats"].add(update.effective_chat.id)
 
+async def on_startup(app):
+    # удаляем все зарегистрированные slash-команды
+    await app.bot.set_my_commands([])
+
 if __name__=="__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .post_init(on_startup)    # <-- сюда вешаем функцию очистки команд
+        .build()
+    )
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_text))
