@@ -541,7 +541,7 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
             return await q.message.reply_text("⏱ Время вышло")
 
     # ─── Отмена добавления ─────────────────────────────────────────────────
-     if d.startswith("undo_"):
+    if d.startswith("undo_"):
         idx = int(d.split("_",1)[1])
         ud = ctx.user_data.get("undo", {})
         now = dt.datetime.utcnow()
