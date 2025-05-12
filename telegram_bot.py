@@ -226,7 +226,7 @@ async def show_month(msg,ctx,code,flag=None,push=True):
     )]]
     for d in days:
         rows.append([InlineKeyboardButton(d, callback_data=f"day_{code}_{d}")])
-        rows.extend(nav_kb(ctx).inline_keyboard)
+    rows.extend(nav_kb(ctx).inline_keyboard)
     await safe_edit(msg, "\n".join([hdr,body,"",ftr]), InlineKeyboardMarkup(rows))
 
 async def show_day(msg,ctx,code,date,push=True):
