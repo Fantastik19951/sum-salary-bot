@@ -523,23 +523,21 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
         }
         return await ask_name(msg,ctx)
 
-    if d.startswith("undo_edit_"):
-        idx = int(d.split("_",1)[1])
+     if d.startswith("undo_edit_"):
+        # d == "undo_edit_<row>"
+        parts = d.split("_")              # ["undo","edit","<row>"]
+        idx = int(parts[2])               # берём третий элемент
         ud = ctx.user_data.get("undo_edit", {})
-        # проверяем, что отмена ещё жива и что это наша запись
         if ud.get("row") == idx and dt.datetime.utcnow() <= ud.get("expires"):
-            # возвращаем старые данные в гугл-таблицу
+            # откатываем в таблице
             update_row(idx, ud["old_symbols"], ud["old_amount"])
-            # обновляем кэш
             ctx.application.bot_data["entries"] = read_sheet()
-            # чистим состояние undo_edit
+            # удаляем состояние отмены
             ctx.user_data.pop("undo_edit", None)
-            # перерисовываем текущее окно дня «вместо» старого сообщения
+            # перерисовываем день в том же сообщении
             return await show_day(msg, ctx, ud["period"], ud["date"])
         else:
-            # время вышло или не тот row — просто шлём уведомление, сообщение не меняем
             return await msg.reply_text("⏱ Время вышло")
-
     # ─── Отмена добавления ─────────────────────────────────────────────────
     elif d.startswith("undo_"):
         idx = int(d.split("_", 1)[1])  # d = "undo_<row>"
