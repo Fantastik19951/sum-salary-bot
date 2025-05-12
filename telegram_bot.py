@@ -272,44 +272,47 @@ async def show_profit(msg,ctx,start,end,title,push=True):
     text = f"{title} ({sdate(start)}–{sdate(end)})\n<b>10%: {fmt_amount(tot*0.10)} $</b>"
     await safe_edit(msg, text, MAIN_ONLY_KB)
 
-async def show_kpi(msg,ctx,prev=False,push=True):
+async def show_kpi(msg, ctx, prev=False, push=True):
     if prev:
-        start,end = bounds_prev()
-        title = "📊 KPI прошлого"
+        start, end = bounds_prev()
+        title = "📊 KPI прошлого"
     else:
-        start,end = bounds_today()
-        title = "📊 KPI текущего"
-    if push: push_nav(ctx,title,title)
+        start, end = bounds_today()
+        title = "📊 KPI текущего"
+    if push:
+        push_nav(ctx, title, title)
+
     ents = [e for v in ctx.application.bot_data["entries"].values() for e in v
-            if start<=pdate(e['date'])<=end and "amount" in e]
+            if start <= pdate(e["date"]) <= end and "amount" in e]
     if not ents:
         return await safe_edit(msg, "Нет данных", MAIN_ONLY_KB)
+
     turn = sum(e["amount"] for e in ents)
     sal  = turn * 0.10
     days_input = len({e["date"] for e in ents})
     plen = (end - start).days + 1
     avg_per_day = sal / days_input if days_input else 0
+
     if prev:
-        # прошлый период — фактический
+        # прошлый период — только фактическая
         body = (
-            f"{title} ({sdate(start)}–{sdate(end)})\n"
-            f"• Оборот: {fmt_amount(turn)} $\n"
-            f"• ЗП10%: {fmt_amount(sal)} $\n"
-            f"• Дней: {days_input}/{plen}\n"
-            f"• Ср/день: {fmt_amount(avg_per_day)} $"
+            f"{title} ({sdate(start)}–{sdate(end)})\n"
+            f"• ЗП за период: {fmt_amount(sal)} $\n"
+            f"• Дней: {days_input}/{plen}\n"
+            f"• Ср/день: {fmt_amount(avg_per_day)} $"
         )
     else:
-        # текущий период — прогноз и среднее
+        # текущий период — фактическая + прогноз
         forecast = avg_per_day * plen
         body = (
-            f"{title} ({sdate(start)}–{sdate(end)})\n"
-            f"• Оборот: {fmt_amount(turn)} $\n"
-            f"• Прогноз ЗП ({plen} дн): {fmt_amount(forecast)} $\n"
-            f"• Дней: {days_input}/{plen}\n"
-            f"• Ср/день: {fmt_amount(avg_per_day)} $"
+            f"{title} ({sdate(start)}–{sdate(end)})\n"
+            f"• ЗП за период: {fmt_amount(sal)} $\n"
+            f"• Прогноз на {plen} дн: {fmt_amount(forecast)} $\n"
+            f"• Дней: {days_input}/{plen}\n"
+            f"• Ср/день: {fmt_amount(avg_per_day)} $"
         )
-    await safe_edit(msg, body, MAIN_ONLY_KB)
 
+    await safe_edit(msg, body, MAIN_ONLY_KB)
 # ─── ADD/EDIT FLOW ──────────────────────────────────────────────────────────
 async def ask_date(msg,ctx):
     prompt = await msg.reply_text(
@@ -364,7 +367,10 @@ async def process_text(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
             val = float(txt.replace(",","."))
         except:
             return await flow["msg"].reply_text("Нужно число")
-        period = flow.get("period", flow["date"][:7].replace(".","-"))
+           # вместо
+        # period = flow.get("period", flow["date"][:7].replace(".","-"))
+        # используем исключительно сохранённое:
+        period = flow["period"]
         date_str= flow["date"]
 
         if flow.get("mode")=="edit":
@@ -434,11 +440,18 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
         _,code,day = d.split("_",2)
         return await show_day(msg,ctx,code,day)
 
-    if d.startswith("add_"):
-        _,code,date = d.split("_",2)
-        ctx.user_data["flow"] = {"step":"sym","mode":"add","date":date,"msg":msg}
-        return await ask_name(msg,ctx)
-
+        if d.startswith("add_"):
+        # раньше: ctx.user_data["flow"] = {"step":"sym","mode":"add","date":date,"msg":msg}
+        _, code, date = d.split("_",3)[1:]
+        ctx.user_data["flow"] = {
+            "step": "sym",
+            "mode": "add",
+            "date": date,
+            "period": code,       # <-- вот это добавили
+            "msg": msg
+        }
+        return await ask_name(msg, ctx)
+        
     if d=="add_rec":
         return await ask_date(msg,ctx)
 
