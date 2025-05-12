@@ -526,17 +526,20 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
 
     if d.startswith("undo_edit_"):
         ud = ctx.user_data.get("undo_edit", {})
-        # проверяем, что коллбек всё ещё в окне отмены:
-        if ud.get("row") == int(d.split("_", 1)[1]) and dt.datetime.utcnow() <= ud.get("expires"):
-            # удаляем сообщение-подтверждение
+        parts = d.split("_")
+        idx = int(parts[2])  # номер редактируемой строки
+        # проверяем, что это та же самая отмена и не вышло время
+        if ud.get("row") == idx and dt.datetime.utcnow() <= ud.get("expires"):
+            # удаляем уведомление "✅ Изменено"
             await q.message.delete()
-            # откатываем изменения в гугл-таблице
-            update_row(ud["row"], ud["old_symbols"], ud["old_amount"])
+            # откатываем данные в таблице
+            update_row(idx, ud["old_symbols"], ud["old_amount"])
             ctx.application.bot_data["entries"] = read_sheet()
-            # перерисовываем старое сообщение с таблицей
+            # перерисовываем исходный день в том же сообщении
             return await show_day(ud["msg"], ctx, ud["period"], ud["date"])
         else:
             return await q.message.reply_text("⏱ Время вышло")
+
     # ─── Отмена добавления ─────────────────────────────────────────────────
     elif d.startswith("undo_"):
         idx = int(d.split("_", 1)[1])  # d = "undo_<row>"
