@@ -179,7 +179,7 @@ async def show_main(msg,ctx,push=True):
     if push: init_nav(ctx)
     ctx.application.bot_data.setdefault("chats",set()).add(msg.chat_id)
     ctx.application.bot_data["entries"] = read_sheet()
-    # центрируем заголовок
+    # заголовок по центру
     await safe_edit(msg, "<b><center>📊 Главное меню</center></b>", main_kb())
 
 async def show_year(msg,ctx,year,push=True):
@@ -234,10 +234,10 @@ async def show_history(msg,ctx,push=True):
     else:
         lines = [
             f"• {pdate(e['date']).day} {MONTH_NAMES[pdate(e['date']).month-1]} {pdate(e['date']).year} — {fmt_amount(e['salary'])} $"
-            for e in sorted(ents, key=lambda x:pdate(x['date']))
+            for e in sorted(ents, key=lambda x:pdate(x['date'])) 
         ]
         text = "<b>📜 История ЗП</b>\n" + "\n".join(lines)
-    # только Главная
+    # только «Главное»
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное", callback_data="main")]])
     await safe_edit(msg, text, kb)
 
@@ -255,14 +255,13 @@ async def show_kpi(msg,ctx,prev=False,push=True):
     if prev:
         start,end = bounds_prev()
         title = "📊 KPI предыдущего"
-        half_flag = False
+        half_flag=False
     else:
         start,end = bounds_today()
         title = "📊 KPI текущего"
-        half_flag = (td.day<=15)
+        half_flag=(td.day<=15)
     code = start.strftime("%Y-%m")
-    if push:
-        push_nav(ctx, title, title)
+    if push: push_nav(ctx, title, title)
     entries = [
         e for e in ctx.application.bot_data["entries"].get(code,[])
         if "amount" in e and ((pdate(e["date"]).day<=15)==half_flag)
@@ -272,7 +271,7 @@ async def show_kpi(msg,ctx,prev=False,push=True):
         return await safe_edit(msg, "Нет данных за период", kb)
     turn,sal,days,plen,avg,fc = calc_kpi(entries)
     text  = f"{title} ({sdate(start)} – {sdate(end)})\n"
-    text += f"• Оборот: {turn}\n"
+    text += f"• Оборот: {turn} $\n"
     text += f"• ЗП10%: {sal} $\n"
     text += f"• Дней: {days}/{plen}\n"
     text += f"• Ср/день: {round(avg,2)} $\n"
@@ -389,6 +388,15 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
     await q.answer()
     d,msg = q.data, q.message
 
+    # === added handlers для add_rec и add_sal ===
+    if d == "add_rec":
+        return await ask_date(msg,ctx)
+    if d == "add_sal":
+        # mode salary: сразу запрос суммы
+        ctx.user_data["flow"] = {"step":"val","mode":"salary","date":sdate(dt.date.today()),"msg":msg}
+        return await ask_amount(msg,ctx)
+    # ===========================================
+
     # Редактирование
     if d.startswith("edit_"):
         _,r,code,day = d.split("_",3)
@@ -460,12 +468,9 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
     if d=="profit_prev":
         s,e = bounds_prev()
         return await show_profit(msg,ctx,s,e,"💼 Прошлая ЗП")
-    if d=="hist":
-        return await show_history(msg,ctx)
-    if d=="kpi":
-        return await show_kpi(msg,ctx,False)
-    if d=="kpi_prev":
-        return await show_kpi(msg,ctx,True)
+    if d=="hist":   return await show_history(msg,ctx)
+    if d=="kpi":    return await show_kpi(msg,ctx,False)
+    if d=="kpi_prev":return await show_kpi(msg,ctx,True)
 
 async def error_handler(update, context):
     logger.error(f"Unhandled exception {update!r}", exc_info=context.error)
