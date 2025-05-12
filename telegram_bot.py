@@ -417,18 +417,20 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ctx.user_data.pop("flow")
             return await show_day(flow["msg"], ctx, period, date_str)
 
-        # ─── ДОБАВЛЕНИЕ ───────────────────────────────────────────────────
-        # …
+        # ─── ДОБАВЛЕНИЕ ─────────────────────────────────────────────────────────
+        flow["amount"] = val
         row = push_row(flow)
+        # сразу обновляем entries и перерисовываем окно дня
         ctx.application.bot_data["entries"] = read_sheet()
+        await show_day(flow["msg"], ctx, period, date_str)
 
+        # теперь уведомляем и сохраняем данные для undo
         resp = await flow["msg"].reply_text(
             f"✅ Добавлено: {flow['symbols']} · {fmt_amount(val)} $",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("↺ Отменить", callback_data=f"undo_{row}")
             ]])
         )
-        # сохраняем также msg, period, date
         ctx.user_data["undo"] = {
             "row": row,
             "msg": flow["msg"],
@@ -436,15 +438,13 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "date": date_str,
             "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
         }
-# …
+        # автоскрытие уведомления
         ctx.application.job_queue.run_once(
             lambda c: c.bot.delete_message(resp.chat.id, resp.message_id),
             when=UNDO_WINDOW
         )
         ctx.user_data.pop("flow")
-        # перерисовываем день с новой записью
-        return await show_day(flow["msg"], ctx, period, date_str)
-        
+        return
 # ─── CALLBACK HANDLER ───────────────────────────────────────────────────────
 async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
     q = upd.callback_query
@@ -539,18 +539,17 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
         else:
             return await q.message.reply_text("⏱ Время вышло")
 
-    # ─── Отмена добавления ─────────────────────────────────────────────────
+    # ─── ОТМЕНА ДОБАВЛЕНИЯ ───────────────────────────────────────────────
     if d.startswith("undo_"):
         ud = ctx.user_data.get("undo", {})
         now = dt.datetime.utcnow()
-        # проверяем, что row совпадает и не истёк таймаут
         if ud and d == f"undo_{ud['row']}" and now <= ud["expires"]:
-            # удаляем уведомление “✅ Добавлено…”
+            # удаляем уведомление
             await msg.delete()
-            # удаляем саму строку из таблицы
+            # удаляем строку
             delete_row(ud["row"])
             ctx.application.bot_data["entries"] = read_sheet()
-            # перерисовываем содержимое дня в том же сообщении, где была таблица
+            # перерисовываем то же сообщение дня с откатанными данными
             return await show_day(ud["msg"], ctx, ud["period"], ud["date"])
         else:
             return await msg.reply_text("⏱ Время вышло")
