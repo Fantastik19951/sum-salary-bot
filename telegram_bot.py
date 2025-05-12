@@ -407,6 +407,7 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "old_amount": flow["old_amount"],
                 "period": period,
                 "date": date_str,
+                "msg": flow["msg"],
                 "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
             }
             ctx.application.job_queue.run_once(
@@ -524,20 +525,18 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
         return await ask_name(msg,ctx)
 
     if d.startswith("undo_edit_"):
-        # d == "undo_edit_<row>"
-        parts = d.split("_")              # ["undo","edit","<row>"]
-        idx = int(parts[2])               # берём третий элемент
         ud = ctx.user_data.get("undo_edit", {})
-        if ud.get("row") == idx and dt.datetime.utcnow() <= ud.get("expires"):
-            # откатываем в таблице
-            update_row(idx, ud["old_symbols"], ud["old_amount"])
+        # проверяем, что коллбек всё ещё в окне отмены:
+        if ud.get("row") == int(d.split("_", 1)[1]) and dt.datetime.utcnow() <= ud.get("expires"):
+            # удаляем сообщение-подтверждение
+            await q.message.delete()
+            # откатываем изменения в гугл-таблице
+            update_row(ud["row"], ud["old_symbols"], ud["old_amount"])
             ctx.application.bot_data["entries"] = read_sheet()
-            # удаляем состояние отмены
-            ctx.user_data.pop("undo_edit", None)
-            # перерисовываем день в том же сообщении
-            return await show_day(msg, ctx, ud["period"], ud["date"])
+            # перерисовываем старое сообщение с таблицей
+            return await show_day(ud["msg"], ctx, ud["period"], ud["date"])
         else:
-            return await msg.reply_text("⏱ Время вышло")
+            return await q.message.reply_text("⏱ Время вышло")
     # ─── Отмена добавления ─────────────────────────────────────────────────
     elif d.startswith("undo_"):
         idx = int(d.split("_", 1)[1])  # d = "undo_<row>"
