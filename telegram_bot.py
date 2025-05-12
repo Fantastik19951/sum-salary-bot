@@ -413,11 +413,12 @@ async def process_text(u:Update,ctx:ContextTypes.DEFAULT_TYPE):
 # ─── CALLBACK HANDLER ───────────────────────────────────────────────────────
 async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
     q = upd.callback_query
-    if not q: return
+    if not q:
+         return
     await q.answer()
     d,msg = q.data, q.message
     
-     if d == "add_rec":
+    if d == "add_rec":
         return await ask_date(msg, ctx)
 
     if d=="main":
