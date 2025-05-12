@@ -441,17 +441,18 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
         return await show_day(msg,ctx,code,day)
 
     if d.startswith("add_"):
-        # раньше: ctx.user_data["flow"] = {"step":"sym","mode":"add","date":date,"msg":msg}
-        _, code, date = d.split("_",3)[1:]
+        parts = d.split("_")          # ['add','2025-05','12.05.2025']
+        code  = parts[1]
+        date  = parts[2]
         ctx.user_data["flow"] = {
-            "step": "sym",
-            "mode": "add",
-            "date": date,
-            "period": code,       # <-- вот это добавили
-            "msg": msg
+            "step":   "sym",
+            "mode":   "add",
+            "date":   date,
+            "period": code,
+            "msg":    msg
         }
         return await ask_name(msg, ctx)
-        
+    
     if d=="add_rec":
         return await ask_date(msg,ctx)
 
