@@ -203,24 +203,29 @@ def main_kb():
 
 # ─── VIEWS ─────────────────────────────────────────────────────────────────
 async def show_main(msg, ctx, push=True):
-    if push: init_nav(ctx)
+    if push: 
+        init_nav(ctx)
     ctx.application.bot_data.setdefault("chats", set()).add(msg.chat_id)
     ctx.application.bot_data["entries"] = read_sheet()
     
-    # Динамическая статистика
     today = dt.date.today()
     current_month = f"{today.year}-{today.month:02d}"
     entries = ctx.application.bot_data["entries"].get(current_month, [])
     month_total = sum(e.get('amount', 0) for e in entries)
     
+    # NEW: Расчет заработка за сегодня
+    today_entries = [e for e in entries if pdate(e["date"]) == today]
+    today_total = sum(e.get('amount', 0) for e in today_entries)  # <-- Добавлено
+    
+    # Центрированный интерфейс
     text = f"""
     <center>{SEPARATOR}</center>
     <center><b>ГЛАВНОЕ МЕНЮ</b></center>
     <center>{SEPARATOR}</center>
-    
-    📅 Текущий месяц: {MONTH_NAMES[today.month-1].capitalize()}
-    💰 Суммарный оборот: {fmt_amount(month_total)} $
-    💵 Заработок сегодня: {fmt_amount(today_total)} $
+
+    📅 Текущий месяц: <b>{MONTH_NAMES[today.month-1].capitalize()}</b>
+    💰 Суммарный оборот: <b>{fmt_amount(month_total)} $</b>
+    💵 Заработок сегодня: <b>{fmt_amount(today_total)} $</b>  # <-- Теперь переменная определена
     """
     await safe_edit(msg, text, main_kb())
     
@@ -579,26 +584,21 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d=="main":
         return await show_main(msg, ctx)
 
-    if d=="back":
-        code,label = pop_view(ctx)
-        if code=="main":
-            return await show_main(msg,ctx,push=False)
-        if code.startswith("year_"):
-            return await show_year(msg,ctx,code.split("_",1)[1],push=False)
+    elif d == "back":
+        code, label = pop_view(ctx)
         if code.startswith("mon_"):
-            return await show_month(msg,ctx,code.split("_",1)[1],None,push=False)
-        if code.startswith("day_"):
-            _,c,dd = code.split("_",2)
-            return await show_day(msg,ctx,c,dd,push=False)
-        return await show_main(msg,ctx,push=False)
+            await show_month(msg, ctx, code.split("_", 1)[1], push=False)
+        elif code.startswith("year_"):
+            await show_year(msg, ctx, code.split("_", 1)[1], push=False)
+        else:
+            await show_main(msg, ctx, push=False)
 
-    if d=="go_today":
-        ctx.application.bot_data["entries"] = read_sheet()
+    elif d.startswith("year_"):
+        await show_year(msg, ctx, d.split("_", 1)[1])
+        
+    elif d == "go_today":
         td = dt.date.today()
-        return await show_day(msg,ctx, f"{td.year}-{td.month:02d}", sdate(td))
-
-    if d.startswith("year_"):
-        return await show_year(msg,ctx, d.split("_",1)[1])
+        await show_day(msg, ctx, f"{td.year}-{td.month:02d}", sdate(td))
 
     if d.startswith("mon_"):
         _,code = d.split("_",1)
@@ -696,6 +696,9 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _, _, code, date = d.split("_", 3)
         await msg.delete()  # Удаляем сообщение с подтверждением
         return await show_day(msg, ctx, code, date)
+        
+    else:
+        logger.warning(f"Unhandled callback: {d}")
 
 async def error_handler(update, context):
     logging.error(f"Unhandled exception {update!r}", exc_info=context.error)
