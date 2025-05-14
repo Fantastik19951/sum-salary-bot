@@ -34,14 +34,14 @@ DATE_RX      = re.compile(r"\d{2}\.\d{2}\.\d{4}$")
 HEADER_ROWS  = 4
 UNDO_WINDOW  = 10      # seconds for undo
 REMIND_HH_MM = (20, 0) # daily reminder at 20:00
-MONTH_NAMES = [
-    "январь", "февраль", "март", "апрель", "май", "июнь",
-    "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"
+MONTH_NAMES  = [
+    "января","февраля","марта","апреля","мая","июня",
+    "июля","августа","сентября","октября","ноября","декабря"
 ]
 
 # PAD: две неразрывных пробелы
 # Визуальные константы
-SEPARATOR = "▬" * 30
+SEPARATOR = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
 PAD = "\u00A0" * 2  # Неразрывные пробелы
 ICONS = {
     "high": "🚀",
@@ -181,12 +181,10 @@ def bounds_prev():
         return (last.replace(day=16), last)
     return (d.replace(day=1), d.replace(day=15))
 
-async def safe_edit(msg: Message, text: str, kb: InlineKeyboardMarkup):
-    try:
-        return await msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
-    except Exception:
-        return await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
-        
+async def safe_edit(msg:Message, text:str, kb:InlineKeyboardMarkup):
+    try:    return await msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except: return await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
+
 # ─── KEYBOARDS ──────────────────────────────────────────────────────────────
 def main_kb():
     return InlineKeyboardMarkup([
@@ -205,29 +203,24 @@ def main_kb():
 
 # ─── VIEWS ─────────────────────────────────────────────────────────────────
 async def show_main(msg, ctx, push=True):
-    if push: 
-        init_nav(ctx)
+    if push: init_nav(ctx)
     ctx.application.bot_data.setdefault("chats", set()).add(msg.chat_id)
     ctx.application.bot_data["entries"] = read_sheet()
     
+    # Динамическая статистика
     today = dt.date.today()
     current_month = f"{today.year}-{today.month:02d}"
     entries = ctx.application.bot_data["entries"].get(current_month, [])
     month_total = sum(e.get('amount', 0) for e in entries)
     
-    # NEW: Расчет заработка за сегодня
-    today_entries = [e for e in entries if pdate(e["date"]) == today]
-    today_total = sum(e.get('amount', 0) for e in today_entries)  # <-- Добавлено
-    
-    # Центрированный интерфейс
     text = f"""
     {SEPARATOR}
-    <b>ГЛАВНОЕ МЕНЮ</b>
+    🏠 <b>ГЛАВНОЕ МЕНЮ</b>
     {SEPARATOR}
-
-    📅 Текущий месяц: <b>{MONTH_NAMES[today.month-1].capitalize()}</b>
-    💰 Суммарный оборот: <b>{fmt_amount(month_total)} $</b>
-    💵 Заработок сегодня: <b>{fmt_amount(today_total)} $</b>  # <-- Теперь переменная определена
+    
+    📅 Текущий месяц: {MONTH_NAMES[today.month-1].capitalize()}
+    💰 Суммарный оборот: {fmt_amount(month_total)} $
+    📈 Прогноз заработка: {fmt_amount(month_total * 0.1)} $
     """
     await safe_edit(msg, text, main_kb())
     
@@ -253,7 +246,7 @@ async def show_month(msg,ctx,code,flag=None,push=True):
     part = [e for e in ents if "amount" in e and ((pdate(e["date"]).day<=15)==(flag=="old"))]
     days = sorted({e["date"] for e in part}, key=pdate)
     total = sum(e["amount"] for e in part)
-    hdr = f"<center><b>{label} · {'01–15' if flag=='old' else '16–31'}</b></center>"
+    hdr = f"<b>{label} · {'01–15' if flag=='old' else '16–31'}</b>"
     body = "\n".join(
         f"{d} · {fmt_amount(sum(x['amount'] for x in part if x['date']==d))} $"
         for d in days
@@ -273,32 +266,33 @@ async def show_day(msg, ctx, code, date, push=True):
     if push: 
         push_nav(ctx, f"day_{code}_{date}", date)
     
-    # NEW: Форматирование даты "12 мая 2025 года"
-    date_obj = pdate(date)
-    formatted_date = f"{date_obj.day} {MONTH_NAMES[date_obj.month-1]} {date_obj.year} года"
-    
-    # NEW: Центрированный заголовок
-    header = f"""
-    <center>{SEPARATOR}</center>
-    <center><b>{formatted_date}</b></center>
-    <center>{SEPARATOR}</center>
-    """
-    
+    # Обновляем данные и получаем записи
+    ctx.application.bot_data["entries"] = read_sheet()
     ents = [e for e in ctx.application.bot_data["entries"].get(code, []) 
             if e["date"] == date and "amount" in e]
     
+    # Форматируем заголовок
+    header = f"""
+    {SEPARATOR}
+    🗓️ <b>{date}</b>
+    {SEPARATOR}
+    """
+    
+    # Тело с иконками
     body = "\n".join(
         f"{get_amount_icon(e['amount'])} {i+1}. {e['symbols']} · {fmt_amount(e['amount'])} $"
         for i, e in enumerate(ents)
     ) or "📭 Нет записей"
     
+    # Подвал с итогами
     total = sum(e["amount"] for e in ents)
     footer = f"""
-    <center>{SEPARATOR}</center>
+    {SEPARATOR}
     💰 <b>Итого:</b> {fmt_amount(total)} $
     📊 <i>Среднее: {fmt_amount(total/len(ents)) if ents else 0} $/запись</i>
     """
     
+    # Кнопки
     rows = []
     for i, e in enumerate(ents):
         rows.append([
@@ -316,9 +310,9 @@ async def show_history(msg, ctx, push=True):
             for e in v if "salary" in e]
     
     header = f"""
-    <center>{SEPARATOR}</center>
-    <center><b>ИСТОРИЯ ВЫПЛАТ ЗП</b></center>
-    <center>{SEPARATOR}</center>
+    {SEPARATOR}
+    📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
+    {SEPARATOR}
     """
     
     if not ents:
@@ -465,7 +459,6 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-    # ─── ОБРАБОТКА ДАТЫ ─────────────────────────────────────────────────────
     if flow["step"] == "date":
         if txt.lower() == "сегодня":
             flow["date"] = sdate(dt.date.today())
@@ -475,12 +468,10 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return await flow["msg"].reply_text("Неверный формат даты")
         return await ask_name(flow["msg"], ctx)
 
-    # ─── ОБРАБОТКА ИМЕНИ ────────────────────────────────────────────────────
     if flow["step"] == "sym":
         flow["symbols"] = txt
         return await ask_amount(flow["msg"], ctx)
 
-    # ─── ОБРАБОТКА СУММЫ ────────────────────────────────────────────────────
     if flow["step"] == "val":
         try:
             val = float(txt.replace(",", "."))
@@ -490,33 +481,34 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
         dt_obj = pdate(flow["date"])
         period = f"{dt_obj.year}-{dt_obj.month:02d}"
         date_str = flow["date"]
-        
-        # NEW: Форматирование даты для сообщения (12 мая 2025 года)
         formatted_date = f"{dt_obj.day} {MONTH_NAMES[dt_obj.month-1]} {dt_obj.year} года"
 
-        # ─── РЕДАКТИРОВАНИЕ ЗАПИСИ ───────────────────────────────────────────
         if flow.get("mode") == "edit":
             idx = flow["row"]
             update_row(idx, flow["symbols"], val)
             ctx.application.bot_data["entries"] = read_sheet()
             
-            # NEW: Центрированное сообщение об успехе
+            # Сообщение с кнопкой отмены
             success_msg = await flow["msg"].reply_text(
-                f"""
-                <center>{SEPARATOR}</center>
-                <center>✅ <b>ИЗМЕНЕНО</b></center>
-                <center>{SEPARATOR}</center>
-                ▫️ Дата: {formatted_date}
-                ▫️ Описание: {flow['symbols']}
-                ▫️ Сумма: {fmt_amount(val)} $
-                """,
-                parse_mode="HTML",
+                f"✏️ Изменено: {flow['symbols']} · {fmt_amount(val)} $\n"
+                f"▫️ Дата: {formatted_date}\n"
+                f"⌛ Сообщение исчезнет через {UNDO_WINDOW} секунд",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("↺ Отменить", callback_data=f"undo_edit_{idx}")
                 ]])
             )
             
-            # NEW: Автоудаление через UNDO_WINDOW
+            ctx.user_data["undo_edit"] = {
+                "row": idx,
+                "old_symbols": flow["old_symbols"],
+                "old_amount": flow["old_amount"],
+                "period": period,
+                "date": date_str,
+                "msg": flow["msg"],
+                "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
+            }
+            
+            # Автоудаление сообщения
             ctx.application.job_queue.run_once(
                 lambda c: c.bot.delete_message(success_msg.chat_id, success_msg.message_id),
                 UNDO_WINDOW
@@ -524,45 +516,36 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ctx.user_data.pop("flow")
             return await show_day(flow["msg"], ctx, period, date_str)
 
-        # ─── ДОБАВЛЕНИЕ НОВОЙ ЗАПИСИ ─────────────────────────────────────────
-        flow["amount"] = val
-        row = push_row(flow)
-        ctx.application.bot_data["entries"] = read_sheet()
-        await show_day(flow["msg"], ctx, period, date_str)
+        else:
+            flow["amount"] = val
+            row = push_row(flow)
+            ctx.application.bot_data["entries"] = read_sheet()
+            await show_day(flow["msg"], ctx, period, date_str)
 
-        # NEW: Единое центрированное сообщение с автоудалением
-        success_msg = await flow["msg"].reply_text(
-            success_msg = f"""
-            <center>{SEPARATOR}</center>
-            <center>✅ <b>УСПЕШНО!</b></center>
-            <center>{SEPARATOR}</center>
-            ▫️ Дата: {formatted_date}
-            ▫️ Описание: {flow['symbols']}
-            ▫️ Сумма: {fmt_amount(val)} $
+            # Единое сообщение с кнопкой отмены
+            resp = await flow["msg"].reply_text(
+                f"✅ Добавлено: {flow['symbols']} · {fmt_amount(val)} $\n"
+                f"▫️ Дата: {formatted_date}\n"
+                f"⌛ Сообщение исчезнет через {UNDO_WINDOW} секунд",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("↺ Отменить", callback_data=f"undo_{row}")
+                ]])
+            )
 
-            <i>Сообщение исчезнет через {UNDO_WINDOW} секунд</i>
-            """,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("↺ Отменить", callback_data=f"undo_{row}")
-            ]])
-        )
+            ctx.user_data["undo"] = {
+                "row": row,
+                "msg": flow["msg"],
+                "period": period,
+                "date": date_str,
+                "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
+            }
 
-        # NEW: Сохранение данных для отмены + автоудаление
-        ctx.user_data["undo"] = {
-            "row": row,
-            "msg": flow["msg"],
-            "period": period,
-            "date": date_str,
-            "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
-        }
-        ctx.application.job_queue.run_once(
-            lambda c: c.bot.delete_message(success_msg.chat_id, success_msg.message_id),
-            UNDO_WINDOW
-        )
-        ctx.user_data.pop("flow")
-        return
-        
+            ctx.application.job_queue.run_once(
+                lambda c: c.bot.delete_message(resp.chat_id, resp.message_id),
+                UNDO_WINDOW
+            )
+            ctx.user_data.pop("flow")
+            return
 # ─── CALLBACK HANDLER ───────────────────────────────────────────────────────
 async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = upd.callback_query
@@ -586,21 +569,26 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d=="main":
         return await show_main(msg, ctx)
 
-    elif d == "back":
-        code, label = pop_view(ctx)
+    if d=="back":
+        code,label = pop_view(ctx)
+        if code=="main":
+            return await show_main(msg,ctx,push=False)
+        if code.startswith("year_"):
+            return await show_year(msg,ctx,code.split("_",1)[1],push=False)
         if code.startswith("mon_"):
-            await show_month(msg, ctx, code.split("_", 1)[1], push=False)
-        elif code.startswith("year_"):
-            await show_year(msg, ctx, code.split("_", 1)[1], push=False)
-        else:
-            await show_main(msg, ctx, push=False)
+            return await show_month(msg,ctx,code.split("_",1)[1],None,push=False)
+        if code.startswith("day_"):
+            _,c,dd = code.split("_",2)
+            return await show_day(msg,ctx,c,dd,push=False)
+        return await show_main(msg,ctx,push=False)
 
-    elif d.startswith("year_"):
-        await show_year(msg, ctx, d.split("_", 1)[1])
-        
-    elif d == "go_today":
+    if d=="go_today":
+        ctx.application.bot_data["entries"] = read_sheet()
         td = dt.date.today()
-        await show_day(msg, ctx, f"{td.year}-{td.month:02d}", sdate(td))
+        return await show_day(msg,ctx, f"{td.year}-{td.month:02d}", sdate(td))
+
+    if d.startswith("year_"):
+        return await show_year(msg,ctx, d.split("_",1)[1])
 
     if d.startswith("mon_"):
         _,code = d.split("_",1)
@@ -698,9 +686,6 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _, _, code, date = d.split("_", 3)
         await msg.delete()  # Удаляем сообщение с подтверждением
         return await show_day(msg, ctx, code, date)
-        
-    else:
-        logger.warning(f"Unhandled callback: {d}")
 
 async def error_handler(update, context):
     logging.error(f"Unhandled exception {update!r}", exc_info=context.error)
