@@ -249,11 +249,12 @@ async def show_month(msg,ctx,code,flag=None,push=True):
     part = [e for e in ents if "amount" in e and ((pdate(e["date"]).day<=15)==(flag=="old"))]
     days = sorted({e["date"] for e in part}, key=pdate)
     total = sum(e["amount"] for e in part)
-    hdr =
-    f"""
+    hdr = f"""
+    
 {SEPARATOR}
-    <b>{label} • {'01–15' if flag=='old' else '16–31'}</b>
+                <b>{label} • {'01–15' if flag=='old' else '16–31'}</b>
 {SEPARATOR}
+
     """
     body = "\n".join(
         f"{d} · {fmt_amount(sum(x['amount'] for x in part if x['date']==d))} $"
