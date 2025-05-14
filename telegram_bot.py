@@ -274,7 +274,7 @@ async def show_day(msg, ctx, code, date, push=True):
     # Форматируем заголовок
     header = f"""
     {PAD*2}{SEPARATOR}
-                    🗓️ <b>{date}</b>
+                          🗓️ <b>{date}</b>
     {SEPARATOR}
     """
     
@@ -311,7 +311,7 @@ async def show_history(msg, ctx, push=True):
     
     header = f"""
     {PAD*2}{SEPARATOR}
-                    📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
+             📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
     {SEPARATOR}
     """
     
