@@ -232,7 +232,7 @@ async def show_year(msg,ctx,year,push=True):
     ]
     rows = [btns[i:i+4] for i in range(0,12,4)]
     rows.extend(nav_kb(ctx).inline_keyboard)
-    await safe_edit(msg, f"<b>{PAD*30}📆 {year}</b>", InlineKeyboardMarkup(rows))
+    await safe_edit(msg, f"<b>{PAD*15}📆 {year}</b>", InlineKeyboardMarkup(rows))
     
 
 async def show_month(msg,ctx,code,flag=None,push=True):
@@ -273,8 +273,8 @@ async def show_day(msg, ctx, code, date, push=True):
     
     # Форматируем заголовок
     header = f"""
-    {SEPARATOR}
-    🗓️ <b>{date}</b>
+    {PAD*2}{SEPARATOR}
+            🗓️ <b>{date}</b>
     {SEPARATOR}
     """
     
@@ -288,8 +288,8 @@ async def show_day(msg, ctx, code, date, push=True):
     total = sum(e["amount"] for e in ents)
     footer = f"""
     {SEPARATOR}
-    💰 <b>Итого:</b> {fmt_amount(total)} $
-    📊 <i>Среднее: {fmt_amount(total/len(ents)) if ents else 0} $/запись</i>
+    💰 <b>{PAD*5}Итого:</b> {fmt_amount(total)} $
+    📊 <i>{PAD*5}Среднее: {fmt_amount(total/len(ents)) if ents else 0} $/запись</i>
     """
     
     # Кнопки
