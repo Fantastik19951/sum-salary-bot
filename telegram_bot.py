@@ -251,16 +251,16 @@ async def show_month(msg,ctx,code,flag=None,push=True):
     total = sum(e["amount"] for e in part)
     hdr = f"""
 {SEPARATOR}
-                            <b>{label} • {'01–15' if flag=='old' else '16–31'}</b>
+                         <b>{label} • {'01–15' if flag=='old' else '16–31'}</b>
 {SEPARATOR}
     """
     body = "\n".join(
-        f"{PAD*13}{d} • {fmt_amount(sum(x['amount'] for x in part if x['date']==d))} $"
+        f"{PAD*10}🗓️ {d} • {fmt_amount(sum(x['amount'] for x in part if x['date']==d))} $"
         for d in days
-    ) or "{PAD*13}Нет записей"
+    ) or "Нет записей"
     ftr = f"""
 {SEPARATOR}
-    {PAD*13}<b><i>Итого: {fmt_amount(total)} $</i></b>
+    {PAD*10}<b><i>⚠️Итого: {fmt_amount(total)} $</i></b>
     """
     tog = "new" if flag=="old" else "old"
     rows = [[ InlineKeyboardButton(
