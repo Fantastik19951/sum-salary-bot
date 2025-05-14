@@ -235,7 +235,7 @@ async def show_year(msg,ctx,year,push=True):
     ]
     rows = [btns[i:i+4] for i in range(0,12,4)]
     rows.extend(nav_kb(ctx).inline_keyboard)
-    await safe_edit(msg, f"<b>{PAD*15}📆 {year}</b>", InlineKeyboardMarkup(rows))
+    await safe_edit(msg, f"<b>{PAD*17}📆 {year}</b>", InlineKeyboardMarkup(rows))
     
 
 async def show_month(msg,ctx,code,flag=None,push=True):
@@ -257,7 +257,7 @@ async def show_month(msg,ctx,code,flag=None,push=True):
     ftr = f"<b>Итого: {fmt_amount(total)} $</b>"
     tog = "new" if flag=="old" else "old"
     rows = [[ InlineKeyboardButton(
-        "Первая половина" if flag=="old" else "Вторая половина",
+        "2️⃣ Вторая половина" if flag=="old" else "1️⃣ Первая половина",
         callback_data=f"tgl_{code}_{tog}"
     )]]
     for d in days:
@@ -277,7 +277,7 @@ async def show_day(msg, ctx, code, date, push=True):
     # Форматируем заголовок
     header = f"""
 {SEPARATOR}
-                                🗓️ <b>{date}</b>
+                            🗓️ <b>{date}</b>
 {SEPARATOR}
     """
     
@@ -291,8 +291,8 @@ async def show_day(msg, ctx, code, date, push=True):
     total = sum(e["amount"] for e in ents)
     footer = f"""
 {SEPARATOR}
-     <b>{PAD*7}💰{PAD}Итого:</b> {fmt_amount(total)} $
-     <i>{PAD*7}📊 Среднее: {fmt_amount(total/len(ents)) if ents else 0} $</i>
+     <b>{PAD*9}💰{PAD}Итого:</b> {fmt_amount(total)} $
+     <i>{PAD*9}📊 Среднее: {fmt_amount(total/len(ents)) if ents else 0} $</i>
     """
     
     # Кнопки
@@ -314,7 +314,7 @@ async def show_history(msg, ctx, push=True):
     
     header = f"""
 {SEPARATOR}
-             📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
+                 📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
 {SEPARATOR}
     """
     
