@@ -35,7 +35,7 @@ HEADER_ROWS  = 4
 UNDO_WINDOW  = 10      # seconds for undo
 REMIND_HH_MM = (20, 0) # daily reminder at 20:00
 MONTH_NAMES  = [
-    "январь","февраль","март","апрель","май","иню",
+    "январь","февраль","март","апрель","май","июнь",
     "июль","август","сентябрь","октябрь","ноябрь","декабрь"
 ]
 
@@ -214,8 +214,8 @@ async def show_main(msg, ctx, push=True):
     month_total = sum(e.get('amount', 0) for e in entries)
     
     text = f"""
-    {PAD}{SEPARATOR}
-    🏠 <b>ГЛАВНОЕ МЕНЮ</b>
+     {SEPARATOR}
+        🏠 <b>ГЛАВНОЕ МЕНЮ</b>
     {SEPARATOR}
     
     📅 Текущий месяц: {MONTH_NAMES[today.month-1].capitalize()}
