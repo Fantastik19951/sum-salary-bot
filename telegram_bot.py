@@ -40,7 +40,15 @@ MONTH_NAMES  = [
 ]
 
 # PAD: две неразрывных пробелы
-PAD = "\u00A0" * 2
+# Визуальные константы
+SEPARATOR = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+PAD = "\u00A0" * 2  # Неразрывные пробелы
+ICONS = {
+    "high": "🚀",
+    "medium": "🔥",
+    "low": "⭐",
+    "default": "🔸"
+}
 
 # ─── GOOGLE SHEETS I/O ──────────────────────────────────────────────────────
 def connect_sheet():
@@ -147,13 +155,21 @@ MAIN_ONLY_KB = InlineKeyboardMarkup([[
 ]])
 
 # ─── UI & FORMAT ────────────────────────────────────────────────────────────
-def fmt_amount(x:float)->str:
-    if abs(x-int(x))<1e-9:
-        return f"{int(x):,}".replace(",",".")
-    s=f"{x:.2f}".rstrip("0").rstrip(".")
-    i,f=s.split(".") if "." in s else (s,"")
-    return f"{int(i):,}".replace(",",".") + (f and ","+f)
-
+def fmt_amount(x: float) -> str:
+    """Форматирование суммы с разделителями"""
+    if abs(x - int(x)) < 1e-9:
+        return f"{int(x):,}".replace(",", ".")
+    s = f"{x:.2f}".rstrip("0").rstrip(".")
+    i, f = (s.split(".") if "." in s else (s, ""))
+    return f"{int(i):,}".replace(",", ".") + (f and "," + f)
+    
+def get_amount_icon(amount: float) -> str:
+    """Возвращает иконку в зависимости от суммы"""
+    if amount > 2000: return ICONS["high"]
+    elif amount > 1000: return ICONS["medium"]
+    elif amount > 500: return ICONS["low"]
+    return ICONS["default"]
+    
 def bounds_today():
     d=dt.date.today()
     return (d.replace(day=1) if d.day<=15 else d.replace(day=16)), d
@@ -186,12 +202,28 @@ def main_kb():
     ])
 
 # ─── VIEWS ─────────────────────────────────────────────────────────────────
-async def show_main(msg,ctx,push=True):
+async def show_main(msg, ctx, push=True):
     if push: init_nav(ctx)
-    ctx.application.bot_data.setdefault("chats",set()).add(msg.chat_id)
+    ctx.application.bot_data.setdefault("chats", set()).add(msg.chat_id)
     ctx.application.bot_data["entries"] = read_sheet()
-    await safe_edit(msg, "📊 <b>Главное меню</b>", main_kb())
-
+    
+    # Динамическая статистика
+    today = dt.date.today()
+    current_month = f"{today.year}-{today.month:02d}"
+    entries = ctx.application.bot_data["entries"].get(current_month, [])
+    month_total = sum(e.get('amount', 0) for e in entries)
+    
+    text = f"""
+    {SEPARATOR}
+    🏠 <b>ГЛАВНОЕ МЕНЮ</b>
+    {SEPARATOR}
+    
+    📅 Текущий месяц: {MONTH_NAMES[today.month-1].capitalize()}
+    💰 Суммарный оборот: {fmt_amount(month_total)} $
+    📈 Прогноз заработка: {fmt_amount(month_total * 0.1)} $
+    """
+    await safe_edit(msg, text, main_kb())
+    
 async def show_year(msg,ctx,year,push=True):
     if push: push_nav(ctx, f"year_{year}", year)
     btns = [
@@ -230,42 +262,70 @@ async def show_month(msg,ctx,code,flag=None,push=True):
     rows.extend(nav_kb(ctx).inline_keyboard)
     await safe_edit(msg, "\n".join([hdr,body,"",ftr]), InlineKeyboardMarkup(rows))
 
-async def show_day(msg,ctx,code,date,push=True):
-    if push: push_nav(ctx, f"day_{code}_{date}", date)
+async def show_day(msg, ctx, code, date, push=True):
+    if push: 
+        push_nav(ctx, f"day_{code}_{date}", date)
+    
+    # Обновляем данные и получаем записи
     ctx.application.bot_data["entries"] = read_sheet()
-    ents = [e for e in ctx.application.bot_data["entries"].get(code,[])
-            if e["date"]==date and "amount" in e]
-    total = sum(e["amount"] for e in ents)
-    hdr = f"<b>{date}</b>"
+    ents = [e for e in ctx.application.bot_data["entries"].get(code, []) 
+            if e["date"] == date and "amount" in e]
+    
+    # Форматируем заголовок
+    header = f"""
+    {SEPARATOR}
+    🗓️ <b>{date}</b>
+    {SEPARATOR}
+    """
+    
+    # Тело с иконками
     body = "\n".join(
-        f"{i+1}. {e['symbols']} · {fmt_amount(e['amount'])} $"
-        for i,e in enumerate(ents)
-    ) or "Нет записей"
-    ftr = f"<b>Итого: {fmt_amount(total)} $</b>"
+        f"{get_amount_icon(e['amount'])} {i+1}. {e['symbols']} · {fmt_amount(e['amount'])} $"
+        for i, e in enumerate(ents)
+    ) or "📭 Нет записей"
+    
+    # Подвал с итогами
+    total = sum(e["amount"] for e in ents)
+    footer = f"""
+    {SEPARATOR}
+    💰 <b>Итого:</b> {fmt_amount(total)} $
+    📊 <i>Среднее: {fmt_amount(total/len(ents)) if ents else 0} $/запись</i>
+    """
+    
+    # Кнопки
     rows = []
-    for i,e in enumerate(ents):
+    for i, e in enumerate(ents):
         rows.append([
-            InlineKeyboardButton(f"❌{i+1}", callback_data=f"drow_{e['row_idx']}_{code}_{date}"),
+            InlineKeyboardButton(f"❌{i+1}", callback_data=f"confirm_del_{e['row_idx']}_{code}_{date}"),
             InlineKeyboardButton(f"✏️{i+1}", callback_data=f"edit_{e['row_idx']}_{code}_{date}")
         ])
-    rows.append([ InlineKeyboardButton("➕ Запись", callback_data=f"add_{code}_{date}") ])
+    rows.append([InlineKeyboardButton("➕ Запись", callback_data=f"add_{code}_{date}")])
     rows.extend(nav_kb(ctx).inline_keyboard)
-    await safe_edit(msg, "\n".join([hdr,body,"",ftr]), InlineKeyboardMarkup(rows))
-
-async def show_history(msg,ctx,push=True):
+    
+    await safe_edit(msg, "\n".join([header, body, footer]), InlineKeyboardMarkup(rows))
+    
+async def show_history(msg, ctx, push=True):
     ctx.application.bot_data["entries"] = read_sheet()
-    ents = [e for v in ctx.application.bot_data["entries"].values() for e in v if "salary" in e]
+    ents = [e for v in ctx.application.bot_data["entries"].values() 
+            for e in v if "salary" in e]
+    
+    header = f"""
+    {SEPARATOR}
+    📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
+    {SEPARATOR}
+    """
+    
     if not ents:
-        text = "История пуста"
+        text = header + "\n📭 Нет данных о выплатах"
     else:
         lines = [
-            f"• {pdate(e['date']).day} {MONTH_NAMES[pdate(e['date']).month-1]} {pdate(e['date']).year} — {fmt_amount(e['salary'])} $"
-            for e in sorted(ents, key=lambda x:pdate(x['date']))
+            f"▫️ {pdate(e['date']).day} {MONTH_NAMES[pdate(e['date']).month-1]} {pdate(e['date']).year} · {fmt_amount(e['salary'])} $"
+            for e in sorted(ents, key=lambda x: pdate(x['date']))
         ]
-        text = "<b>📜 История ЗП</b>\n" + "\n".join(lines)
-    # только «Главная»
+        text = header + "\n".join(lines)
+    
     await safe_edit(msg, text, MAIN_ONLY_KB)
-
+    
 async def show_profit(msg,ctx,start,end,title,push=True):
     if push: push_nav(ctx,title,title)
     ents = [e for v in ctx.application.bot_data["entries"].values() for e in v
@@ -275,6 +335,11 @@ async def show_profit(msg,ctx,start,end,title,push=True):
     await safe_edit(msg, text, MAIN_ONLY_KB)
 
 import calendar
+
+def progress_bar(progress: float) -> str:
+    """Генерирует текстовый прогресс-бар"""
+    bars = int(progress * 10)
+    return "🟩" * bars + "⬜️" * (10 - bars)
 
 async def show_kpi(msg, ctx, prev=False, push=True):
     # 1) Границы "исторического" периода (для prev) или "актуального" начала
@@ -323,18 +388,21 @@ async def show_kpi(msg, ctx, prev=False, push=True):
 
     # 7) Прогноз:
     forecast = None if prev else avg_per_day * total_days
+    
+    progress = filled_days / total_days if total_days else 0
+    progress_visual = f"\n{progress_bar(progress)} {int(progress*100)}%"
 
     # 8) Собираем текст
     header = f"{title} ({sdate(start)} – {sdate(period_end)})"
     parts = [
-        f"<b>Оборот за период:</b> {fmt_amount(turnover)} $",
-        "",
-        f"<b>Заработная плата за период:</b> {fmt_amount(salary)} $",
-        "",
-        f"<b>Заполнено дней:</b> {filled_days}/{total_days}",
-        "",
-        f"<b>Среднее в день:</b> {fmt_amount(avg_per_day)} $",
+        f"📅 Период: {sdate(start)} – {sdate(period_end)}",
+        f"💵 Оборот: {fmt_amount(turnover)} $",
+        f"💰 Зарплата (10%): {fmt_amount(salary)} $",
+        f"📆 Заполнено дней: {filled_days}/{total_days}",
+        f"📈 Среднее/день: {fmt_amount(avg_per_day)} $",
+        progress_visual
     ]
+    
     if forecast is not None:
         parts += ["", f"<b>Прогноз на конец периода:</b> {fmt_amount(forecast)} $"]
 
@@ -343,15 +411,24 @@ async def show_kpi(msg, ctx, prev=False, push=True):
     # 9) Для KPI — только кнопка «Главное»
     await safe_edit(msg, f"{header}\n\n{text}", MAIN_ONLY_KB)
 # ─── ADD/EDIT FLOW ──────────────────────────────────────────────────────────
-async def ask_date(msg,ctx):
-    prompt = await msg.reply_text(
-        "📅 Введите дату (ДД.MM.YYYY) или «Сегодня»",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("Сегодня", callback_data="today_add")
-        ]])
-    )
-    ctx.user_data["flow"] = {"step":"date","msg":msg,"prompt":prompt}
-
+async def ask_date(msg, ctx):
+    """Новый дизайн ввода даты"""
+    text = f"""
+    {SEPARATOR}
+    📅 <b>ДОБАВЛЕНИЕ ЗАПИСИ</b>
+    {SEPARATOR}
+    Введите дату в формате ДД.ММ.ГГГГ 
+    или выберите:
+    """
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📆 Сегодня", callback_data="today_add")],
+        [InlineKeyboardButton("↩️ Назад", callback_data="back")]
+    ])
+    
+    prompt = await msg.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+    ctx.user_data["flow"] = {"step": "date", "msg": msg, "prompt": prompt}
+    
 async def ask_name(msg,ctx):
     flow = ctx.user_data["flow"]
     if flow.get("mode")=="edit":
@@ -438,12 +515,29 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return await show_day(flow["msg"], ctx, period, date_str)
 
         # ─── ДОБАВЛЕНИЕ ─────────────────────────────────────────────────────────
-        flow["amount"] = val
-        row = push_row(flow)
-        # сразу обновляем entries и перерисовываем окно дня
-        ctx.application.bot_data["entries"] = read_sheet()
-        await show_day(flow["msg"], ctx, period, date_str)
+        else:
+            flow["amount"] = val
+            row = push_row(flow)
+            ctx.application.bot_data["entries"] = read_sheet()
+            await show_day(flow["msg"], ctx, period, date_str)
 
+            # Стилизованное подтверждение
+            success_msg = f"""
+            {SEPARATOR}
+            ✅ <b>УСПЕШНО!</b>
+            {SEPARATOR}
+            ▫️ Дата: {flow['date']}
+            ▫️ Описание: {flow['symbols']}
+            ▫️ Сумма: {fmt_amount(val)} $
+            """
+            
+            await flow["msg"].reply_text(
+                success_msg,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📋 Перейти к дню", callback_data=f"day_{period}_{date_str}")]
+                ])
+            )
         # теперь уведомляем и сохраняем данные для undo
         resp = await flow["msg"].reply_text(
             f"✅ Добавлено: {flow['symbols']} · {fmt_amount(val)} $",
@@ -466,13 +560,22 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.pop("flow")
         return
 # ─── CALLBACK HANDLER ───────────────────────────────────────────────────────
-async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
+async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = upd.callback_query
     if not q:
-         return
+        return
     await q.answer()
-    d,msg = q.data, q.message
+    d, msg = q.data, q.message
     
+    # Обработка подтверждения удаления
+    if d.startswith("confirm_del_"):
+        _, _, row_idx, code, date = d.split("_", 4)
+        delete_row(int(row_idx))
+        ctx.application.bot_data["entries"] = read_sheet()
+        await msg.delete()  # Удаляем сообщение с подтверждением
+        return await show_day(msg, ctx, code, date)
+    
+    # Остальная логика обработки callback'ов...
     if d == "add_rec":
         return await ask_date(msg, ctx)
 
@@ -590,6 +693,12 @@ async def cb(upd:Update,ctx:ContextTypes.DEFAULT_TYPE):
 
     if d=="kpi_prev":
         return await show_kpi(msg,ctx,True)
+        
+    # В функции cb добавьте:
+    elif d.startswith("cancel_del_"):
+        _, _, code, date = d.split("_", 3)
+        await msg.delete()  # Удаляем сообщение с подтверждением
+        return await show_day(msg, ctx, code, date)
 
 async def error_handler(update, context):
     logging.error(f"Unhandled exception {update!r}", exc_info=context.error)
