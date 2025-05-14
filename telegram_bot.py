@@ -310,8 +310,8 @@ async def show_history(msg, ctx, push=True):
             for e in v if "salary" in e]
     
     header = f"""
-    {SEPARATOR}
-    📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
+    {PAD*2}{SEPARATOR}
+                    📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
     {SEPARATOR}
     """
     
