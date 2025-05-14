@@ -275,7 +275,7 @@ async def show_profit(msg,ctx,start,end,title,push=True):
     await safe_edit(msg, text, MAIN_ONLY_KB)
 
 async def show_kpi(msg, ctx, prev=False, push=True):
-    # вычисляем границы периода
+    # Определяем границы периода
     if prev:
         start, end = bounds_prev()
         title = "📊 KPI прошлого"
@@ -283,46 +283,54 @@ async def show_kpi(msg, ctx, prev=False, push=True):
         start, end = bounds_today()
         title = "📊 KPI текущего"
 
-    if push:
+    # При входе сохраняем в навигацию (если нужно)
+    if push and not prev:
         push_nav(ctx, title, title)
 
-    # все записи за период
-    ents = [
+    # Считываем все записи по обороту в периоде
+    entries = [
         e for v in ctx.application.bot_data["entries"].values() for e in v
         if start <= pdate(e["date"]) <= end and "amount" in e
     ]
-    if not ents:
-        return await safe_edit(msg, "Нет данных", InlineKeyboardMarkup([ [InlineKeyboardButton("🏠 Главное", callback_data="main")] ]))
 
-    # общий оборот и 10%
-    turn = sum(e["amount"] for e in ents)
-    sal  = turn * 0.10
+    if not entries:
+        # Если нет данных — просто пишем «Нет данных»
+        return await safe_edit(msg, "Нет данных", MAIN_ONLY_KB)
 
-    # количество дней с записями
-    days_filled = len({ e["date"] for e in ents })
-    # общее число дней в периоде
+    # Общий оборот и ЗП (10% от оборота)
+    turnover = sum(e["amount"] for e in entries)
+    salary = turnover * 0.10
+
+    # Считаем, в скольких днях есть хотя бы одна запись
+    filled_days = len({ e["date"] for e in entries })
     total_days = (end - start).days + 1
 
-    # среднее за заполненные дни
-    avg_per_day = sal / days_filled if days_filled else 0
+    # Среднее за заполненные дни
+    avg_per_day = salary / filled_days if filled_days else 0
 
+    # Прогноз на конец периода (только для текущего)
     if prev:
-        # прошлый период — прогноз = факт
-        forecast_sal = sal
+        forecast = None
     else:
-        # текущий прогноз: среднее * total_days
-        forecast_sal = avg_per_day * total_days
+        forecast = avg_per_day * total_days
 
-    text = (
-        f"{title} ({sdate(start)} – {sdate(end)})\n"
-        f"• Текущая ЗП: {fmt_amount(sal)} $\n"
-        f"• Прогноз ЗП: {fmt_amount(forecast_sal)} $\n"
-        f"• Ср/день: {fmt_amount(avg_per_day)} $"
-    )
+    # Формируем текст
+    lines = []
+    lines.append(f"<b>Оборот за период:</b> {fmt_amount(turnover)} $")
+    lines.append("")  # пустая строка
+    lines.append(f"<b>Заработная плата за период:</b> {fmt_amount(salary)} $")
+    lines.append("")  # пустая строка
+    lines.append(f"<b>Заполнено дней:</b> {filled_days}/{total_days}")
+    lines.append("")  # пустая строка
+    lines.append(f"<b>Среднее в день:</b> {fmt_amount(avg_per_day)} $")
+    if forecast is not None:
+        lines.append("")  # пустая строка
+        lines.append(f"<b>Прогноз на конец периода:</b> {fmt_amount(forecast)} $")
 
-    # у KPI убираем кнопку «назад», оставляем только «Главная»
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное", callback_data="main")]])
-    await safe_edit(msg, text, kb)
+    text = "\n".join(lines)
+
+    # Для KPI — оставляем только кнопку «Главное»
+    await safe_edit(msg, f"{title} ({sdate(start)} – {sdate(end)})\n\n{text}", MAIN_ONLY_KB)
     
 # ─── ADD/EDIT FLOW ──────────────────────────────────────────────────────────
 async def ask_date(msg,ctx):
