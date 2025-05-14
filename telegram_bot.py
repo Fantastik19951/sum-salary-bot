@@ -254,7 +254,7 @@ async def show_month(msg,ctx,code,flag=None,push=True):
         f"{d} · {fmt_amount(sum(x['amount'] for x in part if x['date']==d))} $"
         for d in days
     ) or "Нет записей"
-    ftr = f"<b>Итого: {fmt_amount(total)} $</b>"
+    ftr = f"<b><i>Итого: {fmt_amount(total)} $</i></b>"
     tog = "new" if flag=="old" else "old"
     rows = [[ InlineKeyboardButton(
         "2️⃣ Вторая половина" if flag=="old" else "1️⃣ Первая половина",
@@ -291,8 +291,8 @@ async def show_day(msg, ctx, code, date, push=True):
     total = sum(e["amount"] for e in ents)
     footer = f"""
 {SEPARATOR}
-     <b>{PAD*9}💰{PAD}Итого:</b> {fmt_amount(total)} $
-     <i>{PAD*9}📊 Среднее: {fmt_amount(total/len(ents)) if ents else 0} $</i>
+     <b>{PAD*10}💰Итого:</b> {fmt_amount(total)} $
+     <i>{PAD*9}📊 {PAD}Среднее: {fmt_amount(total/len(ents)) if ents else 0} $</i>
     """
     
     # Кнопки
