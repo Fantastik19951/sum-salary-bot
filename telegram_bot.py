@@ -214,14 +214,16 @@ async def show_main(msg, ctx, push=True):
     month_total = sum(e.get('amount', 0) for e in entries)
     
     text = f"""
-    {PAD*2}{SEPARATOR}
+{SEPARATOR}
                     🏠 <b>ГЛАВНОЕ МЕНЮ</b>
-    {SEPARATOR}
+{SEPARATOR}
     
     📅 Текущий месяц: {MONTH_NAMES[today.month-1].capitalize()}
     📅 Текущая дата : {dt.date.today()}
     💰 Суммарный оборот: {fmt_amount(month_total)} $
     📈 Заработок на сегодня: {fmt_amount(month_total * 0.1)} $
+    
+{SEPARATOR}
     """
     await safe_edit(msg, text, main_kb())
     
@@ -274,8 +276,8 @@ async def show_day(msg, ctx, code, date, push=True):
     
     # Форматируем заголовок
     header = f"""
-{PAD*2}{SEPARATOR}
-                                  🗓️ <b>{date}</b>
+{SEPARATOR}
+                                🗓️ <b>{date}</b>
 {SEPARATOR}
     """
     
@@ -289,8 +291,8 @@ async def show_day(msg, ctx, code, date, push=True):
     total = sum(e["amount"] for e in ents)
     footer = f"""
 {SEPARATOR}
-     <b>{PAD*10}💰 {PAD}Итого:</b> {fmt_amount(total)} $
-     <i>{PAD*10}📊 Среднее: {fmt_amount(total/len(ents)) if ents else 0} $</i>
+     <b>{PAD*7}💰{PAD}Итого:</b> {fmt_amount(total)} $
+     <i>{PAD*7}📊 Среднее: {fmt_amount(total/len(ents)) if ents else 0} $</i>
     """
     
     # Кнопки
@@ -311,7 +313,7 @@ async def show_history(msg, ctx, push=True):
             for e in v if "salary" in e]
     
     header = f"""
-{PAD*2}{SEPARATOR}
+{SEPARATOR}
              📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
 {SEPARATOR}
     """
@@ -414,11 +416,11 @@ async def show_kpi(msg, ctx, prev=False, push=True):
 async def ask_date(msg, ctx):
     """Новый дизайн ввода даты"""
     text = f"""
-    {SEPARATOR}
+{SEPARATOR}
     📅 <b>ДОБАВЛЕНИЕ ЗАПИСИ</b>
-    {SEPARATOR}
-    Введите дату в формате ДД.ММ.ГГГГ 
-    или выберите:
+{SEPARATOR}
+Введите дату в формате ДД.ММ.ГГГГ 
+или выберите:
     """
     
     keyboard = InlineKeyboardMarkup([
