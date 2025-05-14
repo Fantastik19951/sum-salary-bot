@@ -41,7 +41,7 @@ MONTH_NAMES = [
 
 # PAD: две неразрывных пробелы
 # Визуальные константы
-SEPARATOR = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+SEPARATOR = "▬" * 30
 PAD = "\u00A0" * 2  # Неразрывные пробелы
 ICONS = {
     "high": "🚀",
@@ -181,10 +181,12 @@ def bounds_prev():
         return (last.replace(day=16), last)
     return (d.replace(day=1), d.replace(day=15))
 
-async def safe_edit(msg:Message, text:str, kb:InlineKeyboardMarkup):
-    try:    return await msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
-    except: return await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
-
+async def safe_edit(msg: Message, text: str, kb: InlineKeyboardMarkup):
+    try:
+        return await msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        return await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
+        
 # ─── KEYBOARDS ──────────────────────────────────────────────────────────────
 def main_kb():
     return InlineKeyboardMarkup([
@@ -219,9 +221,9 @@ async def show_main(msg, ctx, push=True):
     
     # Центрированный интерфейс
     text = f"""
-    <center>{SEPARATOR}</center>
-    <center><b>ГЛАВНОЕ МЕНЮ</b></center>
-    <center>{SEPARATOR}</center>
+    {SEPARATOR}
+    <b>ГЛАВНОЕ МЕНЮ</b>
+    {SEPARATOR}
 
     📅 Текущий месяц: <b>{MONTH_NAMES[today.month-1].capitalize()}</b>
     💰 Суммарный оборот: <b>{fmt_amount(month_total)} $</b>
