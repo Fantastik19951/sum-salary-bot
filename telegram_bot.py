@@ -283,55 +283,53 @@ async def show_kpi(msg, ctx, prev=False, push=True):
         start, end = bounds_today()
         title = "📊 KPI текущего"
 
-    # При входе сохраняем в навигацию (если нужно)
+    # Навигация
     if push and not prev:
         push_nav(ctx, title, title)
 
-    # Считываем все записи по обороту в периоде
+    # Собираем записи по обороту в периоде
     entries = [
         e for v in ctx.application.bot_data["entries"].values() for e in v
         if start <= pdate(e["date"]) <= end and "amount" in e
     ]
 
     if not entries:
-        # Если нет данных — просто пишем «Нет данных»
         return await safe_edit(msg, "Нет данных", MAIN_ONLY_KB)
 
-    # Общий оборот и ЗП (10% от оборота)
+    # Общий оборот и ЗП
     turnover = sum(e["amount"] for e in entries)
     salary = turnover * 0.10
 
-    # Считаем, в скольких днях есть хотя бы одна запись
-    filled_days = len({ e["date"] for e in entries })
+    # Фактическое число дней с записями
+    filled_days = len({e["date"] for e in entries})
+
+    # Общее число дней в этом периоде (по датам start–end)
     total_days = (end - start).days + 1
 
     # Среднее за заполненные дни
     avg_per_day = salary / filled_days if filled_days else 0
 
-    # Прогноз на конец периода (только для текущего)
-    if prev:
-        forecast = None
-    else:
-        forecast = avg_per_day * total_days
+    # Прогноз (только для текущего)
+    forecast = None if prev else avg_per_day * total_days
 
-    # Формируем текст
-    lines = []
-    lines.append(f"<b>Оборот за период:</b> {fmt_amount(turnover)} $")
-    lines.append("")  # пустая строка
-    lines.append(f"<b>Заработная плата за период:</b> {fmt_amount(salary)} $")
-    lines.append("")  # пустая строка
-    lines.append(f"<b>Заполнено дней:</b> {filled_days}/{total_days}")
-    lines.append("")  # пустая строка
-    lines.append(f"<b>Среднее в день:</b> {fmt_amount(avg_per_day)} $")
+    # Составляем текст
+    parts = [
+        f"<b>Оборот за период:</b> {fmt_amount(turnover)} $",
+        "",
+        f"<b>Заработная плата за период:</b> {fmt_amount(salary)} $",
+        "",
+        f"<b>Заполнено дней:</b> {filled_days}/{total_days}",
+        "",
+        f"<b>Среднее в день:</b> {fmt_amount(avg_per_day)} $",
+    ]
     if forecast is not None:
-        lines.append("")  # пустая строка
-        lines.append(f"<b>Прогноз на конец периода:</b> {fmt_amount(forecast)} $")
+        parts += ["", f"<b>Прогноз на конец периода:</b> {fmt_amount(forecast)} $"]
 
-    text = "\n".join(lines)
+    text = "\n".join(parts)
+    header = f"{title} ({sdate(start)} – {sdate(end)})"
 
-    # Для KPI — оставляем только кнопку «Главное»
-    await safe_edit(msg, f"{title} ({sdate(start)} – {sdate(end)})\n\n{text}", MAIN_ONLY_KB)
-    
+    # Для KPI — только кнопка «Главное»
+    await safe_edit(msg, f"{header}\n\n{text}", MAIN_ONLY_KB)
 # ─── ADD/EDIT FLOW ──────────────────────────────────────────────────────────
 async def ask_date(msg,ctx):
     prompt = await msg.reply_text(
