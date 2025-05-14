@@ -274,7 +274,7 @@ async def show_day(msg, ctx, code, date, push=True):
     # Форматируем заголовок
     header = f"""
     {PAD*2}{SEPARATOR}
-            🗓️ <b>{date}</b>
+                    🗓️ <b>{date}</b>
     {SEPARATOR}
     """
     
@@ -288,8 +288,8 @@ async def show_day(msg, ctx, code, date, push=True):
     total = sum(e["amount"] for e in ents)
     footer = f"""
     {SEPARATOR}
-    💰 <b>{PAD*5}Итого:</b> {fmt_amount(total)} $
-    📊 <i>{PAD*5}Среднее: {fmt_amount(total/len(ents)) if ents else 0} $/запись</i>
+     <b>{PAD*5}💰 Итого:</b> {fmt_amount(total)} $
+     <i>{PAD*5}📊 Среднее: {fmt_amount(total/len(ents)) if ents else 0} $/запись</i>
     """
     
     # Кнопки
