@@ -274,9 +274,9 @@ async def show_day(msg, ctx, code, date, push=True):
     
     # Форматируем заголовок
     header = f"""
-    {PAD*2}{SEPARATOR}
+{PAD*2}{SEPARATOR}
                                   🗓️ <b>{date}</b>
-    {SEPARATOR}
+{SEPARATOR}
     """
     
     # Тело с иконками
@@ -288,7 +288,7 @@ async def show_day(msg, ctx, code, date, push=True):
     # Подвал с итогами
     total = sum(e["amount"] for e in ents)
     footer = f"""
-    {SEPARATOR}
+{SEPARATOR}
      <b>{PAD*10}💰 {PAD}Итого:</b> {fmt_amount(total)} $
      <i>{PAD*10}📊 Среднее: {fmt_amount(total/len(ents)) if ents else 0} $</i>
     """
@@ -311,9 +311,9 @@ async def show_history(msg, ctx, push=True):
             for e in v if "salary" in e]
     
     header = f"""
-    {PAD*2}{SEPARATOR}
+{PAD*2}{SEPARATOR}
              📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
-    {SEPARATOR}
+{SEPARATOR}
     """
     
     if not ents:
