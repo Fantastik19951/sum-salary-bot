@@ -255,12 +255,12 @@ async def show_month(msg,ctx,code,flag=None,push=True):
 {SEPARATOR}
     """
     body = "\n".join(
-        f"{PAD*10}🗓️ {d} • {fmt_amount(sum(x['amount'] for x in part if x['date']==d))} $"
+        f"{PAD*8}🗓️{PAD}  {d} • {fmt_amount(sum(x['amount'] for x in part if x['date']==d))} $"
         for d in days
     ) or "Нет записей"
     ftr = f"""
 {SEPARATOR}
-    {PAD*10}<b><i>⚠️Итого: {fmt_amount(total)} $</i></b>
+    {PAD*7}<b><i>✅ Итоговая сумма всех дней: {fmt_amount(total)} $</i></b>
     """
     tog = "new" if flag=="old" else "old"
     rows = [[ InlineKeyboardButton(
