@@ -219,6 +219,7 @@ async def show_main(msg, ctx, push=True):
     {SEPARATOR}
     
     📅 Текущий месяц: {MONTH_NAMES[today.month-1].capitalize()}
+    📅 Текущая дата : {dt.date.today()}
     💰 Суммарный оборот: {fmt_amount(month_total)} $
     📈 Заработок на сегодня: {fmt_amount(month_total * 0.1)} $
     """
