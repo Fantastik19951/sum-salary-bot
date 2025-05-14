@@ -232,7 +232,7 @@ async def show_year(msg,ctx,year,push=True):
     ]
     rows = [btns[i:i+4] for i in range(0,12,4)]
     rows.extend(nav_kb(ctx).inline_keyboard)
-    await safe_edit(msg, f"<b>📆 {year}</b>", InlineKeyboardMarkup(rows))
+    await safe_edit(msg, f"<b>{PAD*30}📆 {year}</b>", InlineKeyboardMarkup(rows))
     
 
 async def show_month(msg,ctx,code,flag=None,push=True):
