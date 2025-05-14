@@ -260,7 +260,7 @@ async def show_month(msg,ctx,code,flag=None,push=True):
     ) or "Нет записей"
     ftr = f"""
 {SEPARATOR}
-    {PAD*7}<b><i>✅ Итоговая сумма всех дней: {fmt_amount(total)} $</i></b>
+    <b><i>✅ Итоговая сумма всех дней: {fmt_amount(total)} $</i></b>
     """
     tog = "new" if flag=="old" else "old"
     rows = [[ InlineKeyboardButton(
