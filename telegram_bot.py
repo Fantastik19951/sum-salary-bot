@@ -398,10 +398,10 @@ async def show_penalties(msg, ctx):
     else:
         lines.append("\n📭 Нет данных о штрафах")
 
-    # Фиксированная ширина кнопок
+    # Исправленная клавиатура
     keyboard = [
         [InlineKeyboardButton("⬅️ Назад", callback_data="hist")],
-        [InlineKeyboardButton("🏠 Главное", callback_data="main", width=20)]
+        [InlineKeyboardButton("🏠 Главное", callback_data="main")]  # Убран параметр width
     ]
 
     await safe_edit(msg, header + "\n".join(lines), InlineKeyboardMarkup(keyboard))
