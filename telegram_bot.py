@@ -29,8 +29,15 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
 
-DATE_FMT     = "%d.%m.%Y"
-DATE_RX      = re.compile(r"\d{2}\.\d{2}\.\d{4}$")
+DATE_FMT = "%d %B %Y"  # Будет "20 мая 2025"
+DATE_RX = re.compile(
+    r"(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(\d{4})",
+    re.IGNORECASE
+)
+
+def is_date(s: str) -> bool:
+    return bool(DATE_RX.fullmatch(s.strip()))
+    
 HEADER_ROWS  = 4
 UNDO_WINDOW  = 10      # seconds for undo
 REMIND_HH_MM = (20, 0) # daily reminder at 20:00
@@ -76,6 +83,17 @@ def sdate(d: dt.date) -> str: return d.strftime(DATE_FMT)
 def pdate(s: str) -> dt.date: return dt.datetime.strptime(s, DATE_FMT).date()
 def is_date(s: str) -> bool: return bool(DATE_RX.fullmatch(s.strip()))
 
+def russian_month(date_obj: dt.date) -> str:
+    return MONTH_NAMES[date_obj.month - 1].lower()
+
+def sdate(d: dt.date) -> str:
+    return f"{d.day} {russian_month(d)} {d.year}"
+
+def pdate(s: str) -> dt.date:
+    day, month, year = s.split()
+    month_num = MONTH_NAMES.index(month.lower().strip()) + 1
+    return dt.date(int(year), month_num, int(day))
+    
 def read_sheet():
     data = defaultdict(list)
     if not SHEET: return data
@@ -220,7 +238,7 @@ async def show_main(msg, ctx, push=True):
     ctx.application.bot_data["entries"] = read_sheet()
     
     # Динамическая статистика (ОБНОВЛЕННЫЙ БЛОК)
-    today = dt.date.today()
+    today_fmt = sdate(dt.date.today())  # Будет "20 мая 2025"
     start_period, end_period = get_current_period(today)
     period_entries = [
         e for e in ctx.application.bot_data["entries"].get(f"{today.year}-{today.month:02d}", [])
@@ -296,6 +314,8 @@ async def show_month(msg,ctx,code,flag=None,push=True):
     await safe_edit(msg, "\n".join([hdr,body,"",ftr]), InlineKeyboardMarkup(rows))
 
 async def show_day(msg, ctx, code, date, push=True):
+    # date в формате "2025-05-20"
+    display_date = sdate(pdate(date))  # "20 мая 2025"
     if push: 
         push_nav(ctx, f"day_{code}_{date}", date)
     
@@ -307,7 +327,7 @@ async def show_day(msg, ctx, code, date, push=True):
     # Форматируем заголовок
     header = f"""
 {SEPARATOR}
-                            🗓️ <b>{date}</b>
+                            🗓️ <b>{sdate(pdate(date))}</b>
 {SEPARATOR}
     """
     
@@ -352,7 +372,7 @@ async def show_history(msg, ctx, push=True):
         text = header + "\n📭 Нет данных о выплатах"
     else:
         lines = [
-            f"▫️ {pdate(e['date']).day} {MONTH_NAMES[pdate(e['date']).month-1]} {pdate(e['date']).year} · {fmt_amount(e['salary'])} $"
+            f"▫️ {sdate(pdate(e['date']))} · {fmt_amount(e['salary'])} $"
             for e in sorted(ents, key=lambda x: pdate(x['date']))
         ]
         text = header + "\n".join(lines)
@@ -444,13 +464,13 @@ async def show_kpi(msg, ctx, prev=False, push=True):
     await safe_edit(msg, f"{header}\n\n{text}", MAIN_ONLY_KB)
 # ─── ADD/EDIT FLOW ──────────────────────────────────────────────────────────
 async def ask_date(msg, ctx):
-    """Новый дизайн ввода даты"""
     text = f"""
 {SEPARATOR}
             📅 <b>ДОБАВЛЕНИЕ ЗАПИСИ</b>
 {SEPARATOR}
-Введите дату в формате ДД.ММ.ГГГГ 
-или выберите:
+Введите дату в формате: <code>ДД месяц_год ГГГГ</code>
+Пример: <code>15 мая 2025</code>
+Или выберите:
     """
     
     keyboard = InlineKeyboardMarkup([
