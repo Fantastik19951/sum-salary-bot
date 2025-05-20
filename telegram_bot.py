@@ -93,6 +93,18 @@ def read_sheet():
         data[key].append(e)
     return data
 
+def get_current_period(today: dt.date) -> tuple[dt.date, dt.date]:
+    """Возвращает даты начала и конца текущего периода."""
+    if today.day <= 15:
+        start = today.replace(day=1)
+        end = today.replace(day=15)
+    else:
+        start = today.replace(day=16)
+        # Корректный конец месяца
+        last_day = calendar.monthrange(today.year, today.month)[1]
+        end = today.replace(day=last_day)
+    return start, end
+
 def push_row(entry):
     if not SHEET: return None
     nd = pdate(entry["date"])
@@ -207,21 +219,32 @@ async def show_main(msg, ctx, push=True):
     ctx.application.bot_data.setdefault("chats", set()).add(msg.chat_id)
     ctx.application.bot_data["entries"] = read_sheet()
     
-    # Динамическая статистика
+    # Динамическая статистика (ОБНОВЛЕННЫЙ БЛОК)
     today = dt.date.today()
-    current_month = f"{today.year}-{today.month:02d}"
-    entries = ctx.application.bot_data["entries"].get(current_month, [])
-    month_total = sum(e.get('amount', 0) for e in entries)
-    
+    start_period, end_period = get_current_period(today)
+    period_entries = [
+        e for e in ctx.application.bot_data["entries"].get(f"{today.year}-{today.month:02d}", [])
+        if start_period <= pdate(e['date']) <= end_period
+    ]
+    period_total = sum(e.get('amount', 0) for e in period_entries)
+    earnings_today = period_total * 0.10  # 10% от оборота периода
+
+    # Форматирование периода
+    period_label = (
+        f"01–15 {MONTH_NAMES[today.month-1].capitalize()}" 
+        if today.day <= 15 
+        else f"16–{end_period.day} {MONTH_NAMES[today.month-1].capitalize()}"
+    )
+
     text = f"""
 {SEPARATOR}
                     🏠 <b>ГЛАВНОЕ МЕНЮ</b>
 {SEPARATOR}
     
-    📅 Текущий месяц: {MONTH_NAMES[today.month-1].capitalize()}
-    📅 Текущая дата : {dt.date.today()}
-    💰 Суммарный оборот: {fmt_amount(month_total)} $
-    📈 Заработок на сегодня: {fmt_amount(month_total*0.10)} $
+    📅 Текущий период: {period_label}
+    📅 Сегодняшняя дата: {sdate(today)}
+    💰 Суммарный оборот: {fmt_amount(period_total)} $
+    📈 Заработок на период: {fmt_amount(earnings_today)} $
     
 {SEPARATOR}
     """
