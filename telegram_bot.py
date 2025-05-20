@@ -342,14 +342,50 @@ async def show_history(msg, ctx, push=True):
     ents = [e for v in ctx.application.bot_data["entries"].values() 
             for e in v if "salary" in e]
     
+    # Разделяем записи на основные и штрафы
+    main_entries = [e for e in ents if e["salary"] >= 500]
+    penalty_entries = [e for e in ents if e["salary"] < 500]
+
     header = f"""
 {SEPARATOR}
                  📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
 {SEPARATOR}
     """
     
-    if not ents:
+    # Создаем клавиатуру
+    keyboard = []
+    if penalty_entries:
+        keyboard.append([InlineKeyboardButton("⚖️ Штрафы", callback_data="penalties")])
+    keyboard.append([InlineKeyboardButton("🏠 Главное", callback_data="main")])
+    
+    if not main_entries:
         text = header + "\n📭 Нет данных о выплатах"
+    else:
+        lines = [
+            f"▫️ {pdate(e['date']).day} {MONTH_NAMES[pdate(e['date']).month-1]} {pdate(e['date']).year} · {fmt_amount(e['salary'])} $"
+            for e in sorted(main_entries, key=lambda x: pdate(x['date']))
+        ]
+        text = header + "\n".join(lines)
+    
+    await safe_edit(msg, text, InlineKeyboardMarkup(keyboard))
+
+async def show_penalties(msg, ctx):
+    ents = [e for v in ctx.application.bot_data["entries"].values() 
+            for e in v if "salary" in e and e["salary"] < 500]
+    
+    header = f"""
+{SEPARATOR}
+                 ⚖️ <b>ИСТОРИЯ ШТРАФОВ</b>
+{SEPARATOR}
+    """
+    
+    keyboard = [
+        [InlineKeyboardButton("⬅️ Назад", callback_data="back_to_history")],
+        [InlineKeyboardButton("🏠 Главное", callback_data="main")]
+    ]
+    
+    if not ents:
+        text = header + "\n📭 Нет данных о штрафах"
     else:
         lines = [
             f"▫️ {pdate(e['date']).day} {MONTH_NAMES[pdate(e['date']).month-1]} {pdate(e['date']).year} · {fmt_amount(e['salary'])} $"
@@ -357,7 +393,7 @@ async def show_history(msg, ctx, push=True):
         ]
         text = header + "\n".join(lines)
     
-    await safe_edit(msg, text, MAIN_ONLY_KB)
+    await safe_edit(msg, text, InlineKeyboardMarkup(keyboard))
     
 async def show_profit(msg,ctx,start,end,title,push=True):
     if push: push_nav(ctx,title,title)
@@ -713,6 +749,15 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if d=="kpi_prev":
         return await show_kpi(msg,ctx,True)
+        
+    if d == "hist":
+        return await show_history(msg, ctx)
+    
+    if d == "penalties":
+        return await show_penalties(msg, ctx)
+    
+    if d == "back_to_history":
+        return await show_history(msg, ctx, push=False)
         
     # В функции cb добавьте:
     elif d.startswith("cancel_del_"):
