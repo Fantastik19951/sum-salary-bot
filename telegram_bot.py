@@ -342,7 +342,7 @@ async def show_history(msg, ctx, push=True):
     ents = [e for v in ctx.application.bot_data["entries"].values() 
             for e in v if "salary" in e]
     
-    # Разделяем записи на основные и штрафы
+    # Только основные выплаты (>=500$)
     main_entries = [e for e in ents if e["salary"] >= 500]
     penalty_entries = [e for e in ents if e["salary"] < 500]
 
@@ -351,7 +351,6 @@ async def show_history(msg, ctx, push=True):
                  📜 <b>ИСТОРИЯ ВЫПЛАТ ЗП</b>
 {SEPARATOR}"""
 
-    # Формируем текст
     lines = []
     total = 0
     
@@ -360,29 +359,20 @@ async def show_history(msg, ctx, push=True):
         for e in sorted(main_entries, key=lambda x: pdate(x['date'])):
             lines.append(f"{pdate(e['date']).day} {MONTH_NAMES[pdate(e['date']).month-1]} {pdate(e['date']).year} · {fmt_amount(e['salary'])} $")
             total += e['salary']
-    
-    if penalty_entries:
-        lines.append("\n<b>Штрафы:</b>")
-        for e in sorted(penalty_entries, key=lambda x: pdate(x['date'])):
-            lines.append(f"{pdate(e['date']).day} {MONTH_NAMES[pdate(e['date']).month-1]} {pdate(e['date']).year} · {fmt_amount(e['salary'])} $")
-            total += e['salary']
-
-    # Добавляем итоги
-    if main_entries or penalty_entries:
+        
         lines.append(f"\n{SEPARATOR}")
-        lines.append(f"<b>{PAD*7}💰 Общая сумма: {fmt_amount(total)} $</b>")
+        lines.append(f"<b>💰 Общая сумма: {fmt_amount(total)} $</b>")
     else:
         lines.append("\n📭 Нет данных о выплатах")
 
-    # Клавиатура
-    keyboard = []
-    if penalty_entries:
-        keyboard.append([
-            InlineKeyboardButton("⚖️ Штрафы", callback_data="penalties"),
-            InlineKeyboardButton("🏠 Главное", callback_data="main")
-        ])
-    else:
-        keyboard.append([InlineKeyboardButton("🏠 Главное", callback_data="main")])
+    # Кнопки в одну строку с фиксированным порядком
+    keyboard = [[
+        InlineKeyboardButton("⚖️ Штрафы", callback_data="penalties") if penalty_entries else None,
+        InlineKeyboardButton("🏠 Главное", callback_data="main")
+    ]]
+
+    # Фильтрация None-элементов
+    keyboard = [[btn for btn in row if btn] for row in keyboard]
 
     await safe_edit(msg, header + "\n".join(lines), InlineKeyboardMarkup(keyboard))
 
@@ -403,19 +393,19 @@ async def show_penalties(msg, ctx):
             lines.append(f"{pdate(e['date']).day} {MONTH_NAMES[pdate(e['date']).month-1]} {pdate(e['date']).year} · {fmt_amount(e['salary'])} $")
             total += e['salary']
         
-        # Добавляем итоги
         lines.append(f"\n{SEPARATOR}")
-        lines.append(f"<b>{PAD*7}💰 Сумма штрафов: {fmt_amount(total)} $</b>")
+        lines.append(f"<b>💰 Сумма штрафов: {fmt_amount(total)} $</b>")
     else:
         lines.append("\n📭 Нет данных о штрафах")
 
-    # Клавиатура
+    # Фиксированная ширина кнопок
     keyboard = [
-        [InlineKeyboardButton("⬅️ Назад", callback_data="hist"),
-         InlineKeyboardButton("🏠 Главное", callback_data="main")]
+        [InlineKeyboardButton("⬅️ Назад", callback_data="hist")],
+        [InlineKeyboardButton("🏠 Главное", callback_data="main", width=20)]
     ]
 
     await safe_edit(msg, header + "\n".join(lines), InlineKeyboardMarkup(keyboard))
+    
     
 async def show_profit(msg,ctx,start,end,title,push=True):
     if push: push_nav(ctx,title,title)
