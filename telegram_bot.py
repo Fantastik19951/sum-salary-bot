@@ -2,6 +2,7 @@ import os
 import logging
 import datetime as dt
 import re
+import calendar
 from collections import defaultdict, deque
 
 from dotenv import load_dotenv
@@ -33,7 +34,6 @@ DATE_FMT     = "%d.%m.%Y"
 DATE_RX      = re.compile(r"\d{2}\.\d{2}\.\d{4}$")
 HEADER_ROWS  = 4
 UNDO_WINDOW  = 10      # seconds for undo
-REMIND_HH_MM = (20, 0) # daily reminder at 20:00
 MONTH_NAMES  = [
     "январь","февраль","март","апрель","май","июнь",
     "июль","август","сентябрь","октябрь","ноябрь","декабрь"
@@ -132,10 +132,6 @@ def delete_row(idx:int):
 async def auto_sync(ctx):
     ctx.application.bot_data["entries"] = read_sheet()
 
-async def reminder(ctx):
-    for cid in ctx.application.bot_data.get("chats", set()):
-        try: await ctx.bot.send_message(cid,"⏰ Не забудьте внести записи сегодня!")
-        except: pass
 
 # ─── NAV STACK ──────────────────────────────────────────────────────────────
 def init_nav(ctx):
@@ -412,10 +408,8 @@ async def show_profit(msg,ctx,start,end,title,push=True):
     ents = [e for v in ctx.application.bot_data["entries"].values() for e in v
             if start<=pdate(e['date'])<=end and "amount" in e]
     tot = sum(e["amount"] for e in ents)
-    text = f"{title} ({sdate(start)}–{sdate(end)})\n<b>10%: {fmt_amount(tot*0.10)} $</b>"
+    text = f"{title} ({sdate(start)}–{sdate(end)})\n<b>10%: {fmt_amount(tot*0.10)} $</b>"
     await safe_edit(msg, text, MAIN_ONLY_KB)
-
-import calendar
 
 def progress_bar(progress: float) -> str:
     """Генерирует текстовый прогресс-бар"""
@@ -507,7 +501,7 @@ async def ask_date(msg, ctx):
     ])
     
     prompt = await msg.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
-    ctx.user_data["flow"] = {"step": "date", "msg": msg, "prompt": prompt}
+    ctx.user_data["flow"] = {"step": "date", "mode": "add", "msg": msg, "prompt": prompt}
     
 async def ask_name(msg,ctx):
     flow = ctx.user_data["flow"]
@@ -541,12 +535,16 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pass
 
     if flow["step"] == "date":
-        if txt.lower() == "сегодня":
+        if txt.lower() in ["сегодня", "today"]:
             flow["date"] = sdate(dt.date.today())
         elif is_date(txt):
             flow["date"] = txt
         else:
-            return await flow["msg"].reply_text("Неверный формат даты")
+            return await flow["msg"].reply_text("Неверный формат даты. Введите дату в формате ДД.ММ.ГГГГ или слово 'сегодня'")
+        
+        # Вычисляем период для даты
+        dt_obj = pdate(flow["date"])
+        flow["period"] = f"{dt_obj.year}-{dt_obj.month:02d}"
         return await ask_name(flow["msg"], ctx)
 
     if flow["step"] == "sym":
@@ -667,6 +665,17 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.application.bot_data["entries"] = read_sheet()
         td = dt.date.today()
         return await show_day(msg,ctx, f"{td.year}-{td.month:02d}", sdate(td))
+    
+    if d=="today_add":
+        td = dt.date.today()
+        ctx.user_data["flow"] = {
+            "step": "sym",
+            "mode": "add", 
+            "date": sdate(td),
+            "period": f"{td.year}-{td.month:02d}",
+            "msg": msg
+        }
+        return await ask_name(msg, ctx)
 
     if d.startswith("year_"):
         return await show_year(msg,ctx, d.split("_",1)[1])
@@ -804,8 +813,7 @@ if __name__=="__main__":
     app.add_error_handler(error_handler)
 
     app.job_queue.run_repeating(auto_sync, interval=5, first=0)
-    hh, mm = REMIND_HH_MM
-    app.job_queue.run_daily(reminder, time=dt.time(hour=hh, minute=mm))
+    # Убрано ежедневное напоминание
 
     logging.info("🚀 Bot up")
     app.run_polling(drop_pending_updates=True) 
