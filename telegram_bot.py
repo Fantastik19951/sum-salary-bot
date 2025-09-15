@@ -197,16 +197,17 @@ async def safe_edit(msg:Message, text:str, kb:InlineKeyboardMarkup):
 def main_kb():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(f"{PAD*2}📅 2024{PAD*2}", callback_data="year_2024"),
-            InlineKeyboardButton(f"{PAD*2}📅 2025{PAD*2}", callback_data="year_2025"),
+            InlineKeyboardButton(f"{PAD*2}📅 2024{PAD*2}", callback_data="year_2024"),
+            InlineKeyboardButton(f"{PAD*2}📅 2025{PAD*2}", callback_data="year_2025"),
         ],
-        [ InlineKeyboardButton(f"{PAD*2}📆 Сегодня{PAD*2}", callback_data="go_today") ],
-        [ InlineKeyboardButton(f"{PAD*2}➕ Запись{PAD*2}",  callback_data="add_rec") ],
-        [ InlineKeyboardButton(f"{PAD*3}💰 Текущая ЗП{PAD*10}", callback_data="profit_now"),
-          InlineKeyboardButton(f"{PAD*3}💼 Прошлая ЗП{PAD*10}", callback_data="profit_prev") ],
-        [ InlineKeyboardButton(f"{PAD*2}📜 История ЗП{PAD*2}", callback_data="hist") ],
-        [ InlineKeyboardButton(f"{PAD*2}📊 KPI тек.{PAD*2}", callback_data="kpi"),
-          InlineKeyboardButton(f"{PAD*2}📊 KPI прош.{PAD*2}", callback_data="kpi_prev") ],
+        [ InlineKeyboardButton(f"{PAD*2}📆 Сегодня{PAD*2}", callback_data="go_today") ],
+        [ InlineKeyboardButton(f"{PAD*2}➕ Запись{PAD*2}",  callback_data="add_rec") ],
+        [ InlineKeyboardButton(f"{PAD*2}💰 Пришла зарплата{PAD*2}", callback_data="add_salary") ],
+        [ InlineKeyboardButton(f"{PAD*3}💰 Текущая ЗП{PAD*10}", callback_data="profit_now"),
+          InlineKeyboardButton(f"{PAD*3}💼 Прошлая ЗП{PAD*10}", callback_data="profit_prev") ],
+        [ InlineKeyboardButton(f"{PAD*2}📜 История ЗП{PAD*2}", callback_data="hist") ],
+        [ InlineKeyboardButton(f"{PAD*2}📊 KPI тек.{PAD*2}", callback_data="kpi"),
+          InlineKeyboardButton(f"{PAD*2}📊 KPI прош.{PAD*2}", callback_data="kpi_prev") ],
     ])
 
 # ─── VIEWS ─────────────────────────────────────────────────────────────────
@@ -515,10 +516,27 @@ async def ask_amount(msg,ctx):
     flow = ctx.user_data["flow"]
     if flow.get("mode")=="edit":
         prev = flow["old_amount"]
-        prompt = await msg.reply_text(f"💰 Введите сумму (старое: {fmt_amount(prev)} $):")
+        prompt = await msg.reply_text(f"💰 Введите сумму (старое: {fmt_amount(prev)} $):")
     else:
-        prompt = await msg.reply_text("💰 Введите сумму:")
+        prompt = await msg.reply_text("💰 Введите сумму:")
     flow.update({"step":"val","prompt":prompt})
+
+async def ask_salary(msg, ctx):
+    """Новый дизайн ввода зарплаты"""
+    text = f"""
+{SEPARATOR}
+            💰 <b>ДОБАВЛЕНИЕ ЗАРПЛАТЫ</b>
+{SEPARATOR}
+Введите сумму зарплаты в долларах:
+    """
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📆 Сегодня", callback_data="today_salary")],
+        [InlineKeyboardButton("↩️ Назад", callback_data="back")]
+    ])
+    
+    prompt = await msg.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+    ctx.user_data["flow"] = {"step": "salary", "mode": "add_salary", "msg": msg, "prompt": prompt}
 
 # ─── ADD/EDIT FLOW ──────────────────────────────────────────────────────────
 async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -625,6 +643,53 @@ async def process_text(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             ctx.user_data.pop("flow")
             return
+
+    if flow["step"] == "salary":
+        try:
+            salary_amount = float(txt.replace(",", "."))
+        except:
+            return await flow["msg"].reply_text("Нужно число")
+
+        # Используем сегодняшнюю дату для зарплаты
+        today = dt.date.today()
+        date_str = sdate(today)
+        period = f"{today.year}-{today.month:02d}"
+        formatted_date = f"{today.day} {MONTH_NAMES[today.month-1]} {today.year} года"
+
+        # Создаем запись зарплаты
+        salary_entry = {
+            "date": date_str,
+            "symbols": "💰 Зарплата",
+            "salary": salary_amount
+        }
+        
+        row = push_row(salary_entry)
+        ctx.application.bot_data["entries"] = read_sheet()
+
+        # Сообщение об успешном добавлении
+        resp = await flow["msg"].reply_text(
+            f"✅ Зарплата добавлена: {fmt_amount(salary_amount)} $\n"
+            f"▫️ Дата: {formatted_date}\n"
+            f"⌛ Сообщение исчезнет через {UNDO_WINDOW} секунд",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("↺ Отменить", callback_data=f"undo_{row}")
+            ]])
+        )
+
+        ctx.user_data["undo"] = {
+            "row": row,
+            "msg": flow["msg"],
+            "period": period,
+            "date": date_str,
+            "expires": dt.datetime.utcnow() + dt.timedelta(seconds=UNDO_WINDOW)
+        }
+
+        ctx.application.job_queue.run_once(
+            lambda c: c.bot.delete_message(resp.chat_id, resp.message_id),
+            UNDO_WINDOW
+        )
+        ctx.user_data.pop("flow")
+        return
 # ─── CALLBACK HANDLER ───────────────────────────────────────────────────────
 async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = upd.callback_query
@@ -644,6 +709,9 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Остальная логика обработки callback'ов...
     if d == "add_rec":
         return await ask_date(msg, ctx)
+
+    if d == "add_salary":
+        return await ask_salary(msg, ctx)
 
     if d=="main":
         return await show_main(msg, ctx)
@@ -676,6 +744,19 @@ async def cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "msg": msg
         }
         return await ask_name(msg, ctx)
+
+    if d=="today_salary":
+        td = dt.date.today()
+        ctx.user_data["flow"] = {
+            "step": "salary",
+            "mode": "add_salary",
+            "date": sdate(td),
+            "period": f"{td.year}-{td.month:02d}",
+            "msg": msg
+        }
+        # Пропускаем ввод даты, сразу запрашиваем сумму
+        prompt = await msg.reply_text("💰 Введите сумму зарплаты:")
+        ctx.user_data["flow"]["prompt"] = prompt
 
     if d.startswith("year_"):
         return await show_year(msg,ctx, d.split("_",1)[1])
